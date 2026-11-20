@@ -43,4 +43,19 @@ sub("cq-notice", r"    if \(window\.CSS && typeof CSS\.supports === 'function' &
 open(path, "w", encoding="utf-8").write(s)
 PY
 
+# Safari before 16.4 has no regex lookbehind, so main.js (EMOJI_RE) does not even parse on iOS 15. The lookbehind only skips an
+# emoji glued to a zero-width joiner; the same test is done on the match instead.
+python3 - "$DST/main.js" <<'PYMAIN'
+import sys
+path = sys.argv[1]
+s = open(path, encoding="utf-8").read()
+old_re = "new RegExp('(?<!\\\\u200D)(' +"
+new_re = "new RegExp('(' +"
+old_loop = "  while ((m = EMOJI_RE.exec(s))) {\n"
+new_loop = old_loop + "    if (m.index > 0 && s[m.index - 1] === '\\u200D') continue; // was a lookbehind (Safari < 16.4)\n"
+if s.count(old_re) != 1 or s.count(old_loop) != 1:
+    sys.exit("sync-www: the EMOJI_RE patch no longer matches upstream main.js")
+open(path, "w", encoding="utf-8").write(s.replace(old_re, new_re).replace(old_loop, new_loop))
+PYMAIN
+
 echo "sync-www: ok -> $DST ($(find "$DST" -type f | wc -l | tr -d ' ') files)"
