@@ -123,7 +123,16 @@ static CFTimeInterval gLastLuxAt = 0;
 
 static void PBLightEvent(void *target, void *refcon, void *sender, PBHIDEvent event) {
     if (!event || pHIDEventType(event) != 12) return; // kIOHIDEventTypeAmbientLightSensor
-    double lux = pHIDEventFloat ? pHIDEventFloat(event, 12 << 16) : (double)pHIDEventInt(event, 12 << 16);
+    // Which field carries the level differs between iOS builds (level, raw channels, float or integer): read the usual ones and
+    // take the largest. A sensor that really sees nothing still gives 0, so a stuck 0 reads as dark and nothing is invented.
+    int base = 12 << 16;
+    double c[6] = {0};
+    for (int i = 0; i < 3; i++) { c[i] = (double)pHIDEventInt(event, base | i); if (pHIDEventFloat) c[3 + i] = pHIDEventFloat(event, base | i); }
+    double lux = 0;
+    for (int i = 0; i < 6; i++) if (c[i] > lux && c[i] < 200000) lux = c[i];
+    // debug word for `phoneboxd status`: the three integer fields, 16 bits each
+    static int dbgToken; if (!dbgToken) notify_register_check("com.ductruongvu23.phonebox.luxdbg", &dbgToken);
+    notify_set_state(dbgToken, ((uint64_t)MIN(c[0], 65535) << 32) | ((uint64_t)MIN(c[1], 65535) << 16) | (uint64_t)MIN(c[2], 65535));
     if (lux < 0 || lux > 200000) return;
     CFTimeInterval now = CACurrentMediaTime();
     // the panel wants a change that matters, not a stream: same rule as the Android shell

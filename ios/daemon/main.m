@@ -28,9 +28,13 @@ static NSString *PBRun(NSString *cmd) {
     if ([cmd isEqualToString:@"status"]) {
         uint64_t f = PBNotifyState(PBFlagsNotification);
         uint64_t l = PBNotifyState(PBLuxNotification);
-        return [NSString stringWithFormat:@"ok foreground=%d volumekeys=%d pinned=%d homescreen=%d lux=%@",
+        NSString *r = [NSString stringWithFormat:@"ok foreground=%d volumekeys=%d pinned=%d homescreen=%d lux=%@",
                 !!(f & PBFlagForeground), !!(f & PBFlagVolumeKeys), !!(f & PBFlagPinned), !!(f & PBFlagHomeScreen),
                 (l & PBLuxPresent) ? [NSString stringWithFormat:@"%.2f", (l & PBLuxMask) / 100.0] : @"none"];
+        // fields seen on the last light event, to tell a dark room from a wrong field
+        uint64_t d = PBNotifyState(@"com.ductruongvu23.phonebox.luxdbg");
+        if (d) r = [r stringByAppendingFormat:@" fields=%llu/%llu/%llu", (d >> 32) & 0xffff, (d >> 16) & 0xffff, d & 0xffff];
+        return r;
     }
     return @"error unknown command";
 }
