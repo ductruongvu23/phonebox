@@ -238,7 +238,9 @@ app.Use(async (ctx, next) =>
             ctx.Connection.LocalPort == Port ? "USB" : "Wi-Fi", ctx.Request.Headers["X-PhoneBox-WebView"].ToString());
         if (problem is not null) app.Logger.LogWarning("WebView: {Problem}", problem);
     }
-    if (ctx.Request.Headers.TryGetValue("X-PhoneBox-App", out var appVersion) && appVersion.ToString().Length is > 0 and < 32)
+    // an iPhone is updated through TrollStore / Sileo, not by the agent's APK installer: its version must not trigger "update the phone app"
+    if (ctx.Request.Headers.TryGetValue("X-PhoneBox-App", out var appVersion) && appVersion.ToString().Length is > 0 and < 32
+        && !PhoneRegistry.IsApple(ctx.Request.Headers["X-PhoneBox-Model"].ToString()))
         UpdateService.AppVersion = appVersion.ToString();
     ctx.Response.Headers.CacheControl = "no-store";
     // only the panel may be framed, and only by the settings page itself (the live preview)
@@ -289,6 +291,7 @@ app.MapPost("/api/pair/start", (ConfigStore cfg, PairingCodes codes) =>
         qr = PairingCodes.Svg(link),
         app = apk,
         appQr = PairingCodes.Svg(apk),
+        iosApp = $"https://github.com/ductruongvu23/phonebox/releases/tag/ios-v{AppPaths.Version}",
     });
 });
 app.MapPost("/api/pair/cancel", (long attempt, PairingCodes codes) => { codes.Cancel(attempt); return Results.Ok(); });
@@ -419,6 +422,8 @@ app.MapGet("/api/info", (AdbReverse adb, IosUsb ios, ConfigStore cfg) => Results
     devices = adb.AllDevices.Concat(ios.Devices).ToArray(),
     appMissing = adb.MissingApp,
     usbProblem = adb.UsbProblem,
+    iosProblem = ios.Problem(PhoneRegistry.AnyApple()),
+    iosUsb = new { connected = ios.Connected, usbmux = ios.UsbmuxReachable },
     webviewProblem = WebViewDoctor.DiagnoseRecent(PhoneRegistry.All(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
 }));
 

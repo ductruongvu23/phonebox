@@ -230,3 +230,42 @@ public sealed class UsbMuxTests : IDisposable
         }
     }
 }
+
+/// <summary>What the settings page says when an iPhone is known (it connected over Wi-Fi) but has no USB tunnel.</summary>
+public sealed class IosUsbProblemTests
+{
+    [Fact]
+    public void Nothing_to_say_without_an_iPhone_or_with_a_tunnel_up()
+    {
+        Assert.Null(IosUsb.Describe(false, false, false, false, true, false, true));
+        Assert.Null(IosUsb.Describe(true, true, true, true, false, false, true));
+    }
+
+    [Fact]
+    public void Without_usbmuxd_each_system_gets_its_own_advice()
+    {
+        Assert.Contains("Apple Devices", IosUsb.Describe(true, false, false, false, windows: true, mac: false, true));
+        Assert.Contains("usbmuxd package", IosUsb.Describe(true, false, false, false, windows: false, mac: false, true));
+        Assert.Contains("macOS", IosUsb.Describe(true, false, false, false, windows: false, mac: true, true));
+    }
+
+    [Fact]
+    public void With_usbmuxd_the_advice_depends_on_whether_a_cable_is_seen()
+    {
+        Assert.Contains("Trust", IosUsb.Describe(true, false, true, cableSeen: false, false, true, true));
+        Assert.Contains("not open", IosUsb.Describe(true, false, true, cableSeen: true, false, true, true));
+    }
+
+    [Fact]
+    public void Turned_off_in_the_config_is_said_first()
+    {
+        Assert.Contains("turned off", IosUsb.Describe(true, false, false, false, true, false, enabled: false));
+    }
+
+    [Theory]
+    [InlineData("Apple iPhone8,1", true)]
+    [InlineData("samsung SM-G991B", false)]
+    [InlineData("Applesauce Phone", false)]
+    [InlineData(null, false)]
+    public void Only_the_iOS_app_counts_as_Apple(string? model, bool apple) => Assert.Equal(apple, PhoneRegistry.IsApple(model));
+}

@@ -30,4 +30,9 @@ public static class PhoneRegistry
     }
 
     public static IReadOnlyCollection<PhoneSeen> All() => Seen.Values.ToList();
+
+    /// <summary>The iOS app reports its model as "Apple iPhone8,1"; the Android one as "Manufacturer Model".</summary>
+    public static bool IsApple(string? model) => model is not null && model.StartsWith("Apple ", StringComparison.Ordinal);
+
+    public static bool AnyApple() => Seen.Values.Any(p => IsApple(p.Model));
 }

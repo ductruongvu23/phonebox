@@ -1973,6 +1973,7 @@ async function pairOverWifi() {
         h('img', { src: svg(r.appQr), alt: 'QR code of the app download' }),
         h('small', { class: 'hint' }, t('s.wifi.step1Hint'))),
       pairBox),
+    r.iosApp ? h('p', { class: 'hint', style: 'margin:0' }, 'iPhone / iPad (jailbreak or TrollStore): ', h('a', { href: r.iosApp, target: '_blank', rel: 'noopener' }, r.iosApp.replace('https://', ''))) : null,
     h('p', { class: 'hint', style: 'margin:0' }, r.hosts.length
       ? `The phone will connect to ${r.hosts.join(', ')} on port ${r.port}. The code works once, for 5 minutes; the key itself is not in the QR code.`
       : 'No LAN or Tailscale address was found on this computer, so the phone has nothing to connect to.'),
@@ -3165,8 +3166,9 @@ async function loadInfo() {
     $('followComputerLockOption').style.display = osName === 'macos' ? '' : 'none';
     $('adbFound').textContent = i.adb ? t('s.conn.adbFound', { path: i.adb }) : t('s.conn.adbNotFound') + ' — ' + ({ linux: 'sudo apt install adb', macos: 'brew install android-platform-tools' }[osName] || 'winget install Google.PlatformTools');
     $('appMissing').hidden = !(i.appMissing && i.appMissing.length);
-    $('usbProblem').hidden = !i.usbProblem;
-    $('usbProblem').replaceChildren(...(i.usbProblem ? [icon('warn', 'm'), i.usbProblem] : []));
+    const usbNote = i.usbProblem || i.iosProblem; // Android's adb problem first, else why an iPhone has no USB tunnel
+    $('usbProblem').hidden = !usbNote;
+    $('usbProblem').replaceChildren(...(usbNote ? [icon('warn', 'm'), usbNote] : []));
     $('webviewProblem').hidden = !i.webviewProblem;
     $('webviewProblem').replaceChildren(...(i.webviewProblem ? [icon('warn', 'm'), i.webviewProblem] : []));
     if (i.appMissing?.length) $('appMissingText').textContent = `${i.appMissing.join(', ')} has no PhoneBox app yet`;

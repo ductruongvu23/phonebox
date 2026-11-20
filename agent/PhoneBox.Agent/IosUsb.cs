@@ -30,6 +30,28 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
     public string[] Devices => [.. _devices.Values.Select(d => d.Serial)];
     public event Action? StateChanged;
 
+    /// <summary>True while usbmuxd (the program that talks to iPhones over USB) answers on this computer.</summary>
+    public bool UsbmuxReachable { get; private set; }
+
+    /// <summary>
+    /// Why an iPhone that is known to the agent (it connected over Wi-Fi) has no USB tunnel, in words for the settings page;
+    /// null when there is nothing to say (a tunnel is up, or no iPhone was ever seen).
+    /// </summary>
+    public string? Problem(bool iPhoneSeen) => Describe(iPhoneSeen, Connected, UsbmuxReachable, !_devices.IsEmpty,
+        OperatingSystem.IsWindows(), OperatingSystem.IsMacOS(), cfg.Get().IosUsb);
+
+    internal static string? Describe(bool iPhoneSeen, bool tunnelUp, bool usbmuxReachable, bool cableSeen, bool windows, bool mac, bool enabled)
+    {
+        if (!iPhoneSeen || tunnelUp) return null;
+        if (!enabled) return "iPhone USB is turned off (iosUsb in config.json); the iPhone connects over Wi-Fi only.";
+        if (!usbmuxReachable)
+            return windows ? "To use a USB cable with an iPhone, install Apple Devices (Microsoft Store) or iTunes: they provide the USB driver (Apple Mobile Device Service)."
+                 : mac ? "macOS did not answer for USB devices (usbmuxd); restart the Mac or plug the iPhone in again."
+                 : "To use a USB cable with an iPhone, install the usbmuxd package (for example: sudo apt install usbmuxd).";
+        if (!cableSeen) return "No iPhone on USB: use a data cable, unlock the iPhone and tap Trust if it asks.";
+        return "The iPhone is on USB but PhoneBox is not open or has no USB support there (needs the app open, or the PhoneBox Extras package for the jailbreak).";
+    }
+
     internal int AgentPort => endpoint?.Port ?? 8765;
 
     private sealed class Device(long id, string serial, CancellationTokenSource cts)
@@ -48,11 +70,14 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
             if (!cfg.Get().IosUsb) { StopAll(); await Delay(5, ct); continue; }
             try
             {
+                await using (await UsbMux.OpenAsync(ct)) { } // is usbmuxd there at all?
+                UsbmuxReachable = true;
                 await foreach (var e in UsbMux.ListenAsync(ct)) OnEvent(e, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
             catch (Exception ex)
             {
+                if (ex is IOException or System.Net.Sockets.SocketException) UsbmuxReachable = false;
                 // no usbmuxd at all is normal on a PC that never saw an iPhone (no iTunes / Apple Devices): say it once
                 if (!_warned) { _warned = true; log.LogInformation("iPhone USB support is idle: {Reason}", ex.Message); }
             }
