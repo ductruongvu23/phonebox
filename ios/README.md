@@ -4,6 +4,8 @@ Native shell for the PhoneBox panel on iPhone (target: iPhone 6s, iOS 15, Dopami
 It reuses the Android panel (`android/app/src/main/assets/www`) unchanged: `scripts/sync-www.sh` copies it
 into the app bundle and patches it for iOS. Follows upstream release **0.9.22**.
 
+This is the iOS app. The agent side (`IosUsb.cs`, `UsbMux.cs`) is in `agent/PhoneBox.Agent/`.
+
 Status: the app, the USB tunnel (iPhone and agent sides), the jailbreak extras and the build/CI scripts are written.
 What was run for real is listed under "What is verified" below.
 
@@ -82,7 +84,7 @@ does not exist on your iOS is skipped and the rest keeps working.
 | Native dialogs in en / vi / el | yes (`scripts/gen-strings.py` turns the Android string files into `Localizable.strings`) |
 | Brightness, orientation, haptic/buzz, battery, 24-hour setting, dictation, trackpad | yes. Trackpad uses a WebSocket on Wi-Fi like Android, HTTP on USB |
 | Proximity wake of the night screen | yes, while the panel is dimmed (iOS blanks the display when the sensor is covered, so it is off in the daytime) |
-| Ambient light | with the jailbreak package (IOKit HID light sensor), shown in `phoneboxd status` as `lux=` |
+| Ambient light | with the jailbreak package (IOKit HID light sensor, shown in `phoneboxd status` as `lux=`). **Not confirmed**: on the test iPhone 6s it read 0 in a dark room, so the field it reads, or that phone's sensor, may be wrong; auto-brightness from light is unverified |
 | Volume keys flip pages, Home = back (kiosk), reopen when closed, wake/sleep with the PC lock | with the jailbreak package |
 | Quick Settings tile | no iOS equivalent (Control Center cannot host third-party tiles without a widget extension) |
 | Screen pinning (`setPinned` without a jailbreak) | no: Guided Access is the iOS equivalent and only the user can start it |

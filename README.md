@@ -98,7 +98,12 @@ The [installation guide](docs/SETUP.md) covers options, dependencies, install pa
 | Wakes and opens the panel on connection; supports app updates over adb. | No adb or developer options needed; install app updates manually unless you later configure USB. |
 
 The phone app is not in any app store; it comes only from this repository's releases. It runs on Android 5.0 and
-newer; there is no iOS version.
+newer.
+
+**iPhone / iPad (this fork).** There is an iOS app too, for jailbroken or TrollStore devices (iOS 15 and later, tested
+on an iPhone 6s). It shows the same panel and widgets, connects over USB or paired Wi-Fi, and with the optional
+*PhoneBox Extras* package (rootless jailbreak) also wakes and opens the panel when you plug in and turns the volume keys into
+page flips. See [ios/README.md](ios/README.md) for installing it, what works and what does not.
 
 For automatic USB/Wi-Fi fallback, enable Wi-Fi and connect the phone over USB once.
 [Connection details and Tailscale setup →](docs/SETUP.md#wi-fi--tailscale)
@@ -150,6 +155,7 @@ Change fonts, size, spacing, corners and surfaces globally or for one page or wi
 | Media | System media sessions | `playerctl` | `nowplaying-cli`; Spotify / Music fallback |
 | Volume | Native | `wpctl` / `pactl` | System output; availability varies by device |
 | Agent interface | Tray icon + browser settings | Browser settings | Browser settings |
+| iPhone over USB | needs Apple Devices / iTunes (usbmuxd) | needs the `usbmuxd` package | built in |
 
 Widgets depend on the host's hardware, installed tools and permissions. Advanced Control Deck features have
 [their own platform requirements](docs/CONTROL-DECK.md). Windows ARM and musl Linux (such as Alpine) do not have
@@ -185,7 +191,8 @@ Read the [security details](docs/GUIDE.md#security--privacy). To report a vulner
 
 ## Development
 
-The agent uses **.NET 10**; the Android app uses **Kotlin and a WebView** with plain JavaScript widgets.
+The agent uses **.NET 10**; the Android app uses **Kotlin and a WebView** with plain JavaScript widgets. The iOS app
+(`ios/`) is Objective-C around a `WKWebView` and reuses the same panel (see [ios/README.md](ios/README.md)).
 For Android builds, install **JDK 17** and **Android SDK Platform 35** (the SDK the app is built with; the app itself
 runs on Android 5.0, API 21, and later).
 Preview the panel and editor from source with Python 3, using simulated data:
