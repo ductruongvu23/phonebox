@@ -71,7 +71,8 @@
         BOOL opened = NO;
         for (PBStreamTarget *target in _link.streamTargets) {
             if (![self alive:gen]) break;
-            if (![PBAgentLink probeHost:target.host port:target.port timeoutMs:target.route == PBRouteUSB ? 400 : 1500]) continue;
+            // no probe on USB: a connection through the tunnel uses up one of the PC's idle connections
+            if (target.route == PBRouteWiFi && ![PBAgentLink probeHost:target.host port:target.port timeoutMs:1500]) continue;
             opened = [self readFrom:target generation:gen];
             if (opened) break; // it worked and then ended: reconnect through the whole list again
         }

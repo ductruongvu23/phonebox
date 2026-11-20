@@ -12,6 +12,8 @@ public sealed class AgentConfig
     public ControlDeckConfig Controls { get; set; } = new();
     public string? DeviceSerial { get; set; }
     public string? AdbPath { get; set; }
+    /// <summary>Tunnel for iPhones over USB (usbmuxd); on by default, harmless when no iPhone is plugged in.</summary>
+    public bool IosUsb { get; set; } = true;
     public WeatherConfig Weather { get; set; } = new();
     public PingConfig Ping { get; set; } = new();
     public NightConfig Night { get; set; } = new();

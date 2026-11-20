@@ -353,14 +353,14 @@ static NSString *PBHex(const unsigned char *d, size_t n) {
     }
 }
 
-/// One attempt. Returns nil with *failed set when the request did not complete.
-- (PBReply *)perform:(NSURLRequest *)req session:(NSURLSession *)session failed:(BOOL *)failed {
+/// One attempt. Returns nil with *error set when the request did not complete.
+- (PBReply *)perform:(NSURLRequest *)req session:(NSURLSession *)session error:(NSError **)error {
     __block PBReply *reply = nil;
-    __block BOOL bad = NO;
+    __block NSError *failure = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     NSURLSessionDataTask *t = [session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
         NSHTTPURLResponse *h = [resp isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)resp : nil;
-        if (err || !h) { bad = YES; }
+        if (err || !h) { failure = err ?: [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorBadServerResponse userInfo:nil]; }
         else {
             NSInteger code = h.statusCode;
             if (code < 100 || code > 599 || (code >= 300 && code < 400)) {
@@ -376,7 +376,7 @@ static NSString *PBHex(const unsigned char *d, size_t n) {
     }];
     [t resume];
     dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
-    *failed = bad;
+    if (error) *error = failure;
     return reply;
 }
 
@@ -400,15 +400,17 @@ static PBReply *PBUnknownResult(void) {
 
 - (PBReply *)request:(NSString *)method path:(NSString *)path body:(NSData *)body contentType:(NSString *)ct {
     BOOL post = [method isEqualToString:@"POST"];
-    BOOL failed = NO;
+    NSError *error = nil;
 
-    // USB first: connection refused is instant when there is no tunnel
-    if ([PBAgentLink probeHost:@"127.0.0.1" port:8765 timeoutMs:400]) {
+    // USB first. No probe: a connection through the tunnel uses up one of the PC's idle connections, and "refused" is
+    // instant on loopback when there is no tunnel (the listener only listens while the PC has one ready).
+    {
         NSMutableURLRequest *r = [self build:method url:[kUSBBase stringByAppendingString:path] body:body contentType:ct timeout:4];
-        PBReply *reply = [self perform:r session:_usbSession failed:&failed];
+        PBReply *reply = [self perform:r session:_usbSession error:&error];
         if (reply) { [self noteRoute:PBRouteUSB]; [self maybePair]; return reply; }
-        // The body may have reached the PC: never run a command twice by trying another route.
-        if (post) return PBUnknownResult();
+        BOOL refused = [error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCannotConnectToHost;
+        // Anything but a refusal may have delivered the body to the PC: never run a command twice by trying another route.
+        if (post && !refused) return PBUnknownResult();
     }
 
     PBPc *pc = [self activePc];
@@ -423,7 +425,7 @@ static PBReply *PBUnknownResult(void) {
             NSString *url = [NSString stringWithFormat:@"https://%@:%d%@", host, pc.port, path];
             NSMutableURLRequest *r = [self build:method url:url body:body contentType:ct timeout:4];
             [r setValue:[@"Bearer " stringByAppendingString:pc.token] forHTTPHeaderField:@"Authorization"];
-            PBReply *reply = [self perform:r session:session failed:&failed];
+            PBReply *reply = [self perform:r session:session error:&error];
             if (reply) {
                 @synchronized(self) { _preferredHost = i; }
                 [self noteRoute:PBRouteWiFi];
@@ -465,8 +467,7 @@ static PBReply *PBUnknownResult(void) {
     @synchronized(self) { if (now - _lastPair < 60) return; _lastPair = now; }
     dispatch_async(_background, ^{
         NSMutableURLRequest *r = [self build:@"GET" url:[kUSBBase stringByAppendingString:@"/api/pair"] body:nil contentType:nil timeout:3];
-        BOOL failed = NO;
-        PBReply *reply = [self perform:r session:self->_usbSession failed:&failed];
+        PBReply *reply = [self perform:r session:self->_usbSession error:NULL];
         if (!reply || reply.code != 200) return; // a redirect or error is not the agent's pairing answer
         NSDictionary *j = [NSJSONSerialization JSONObjectWithData:reply.body options:0 error:nil];
         if (![j isKindOfClass:NSDictionary.class]) return;
@@ -514,8 +515,7 @@ static PBReply *PBUnknownResult(void) {
         [r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
         [r setValue:_deviceModel forHTTPHeaderField:@"X-PhoneBox-Model"];
         r.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"code": link.code} options:0 error:nil];
-        BOOL failed = NO;
-        PBReply *reply = [self perform:r session:session failed:&failed];
+        PBReply *reply = [self perform:r session:session error:NULL];
         if (!reply) {
             if (delegate.pinMismatch) { [session finishTasksAndInvalidate]; return [self failure:PBPairWrongCertificate link:link code:0]; }
             continue;

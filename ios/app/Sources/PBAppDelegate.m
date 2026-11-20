@@ -1,11 +1,13 @@
 #import "PBAppDelegate.h"
 #import "PBPanelViewController.h"
+#import "PBUsbListener.h"
 
 @implementation PBAppDelegate {
     PBPanelViewController *_panel;
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    [[PBUsbListener shared] start]; // the USB tunnel (a no-op if phoneboxd owns the ports)
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     _panel = [PBPanelViewController new];
     self.window.rootViewController = _panel;
