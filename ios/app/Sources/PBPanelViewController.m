@@ -65,7 +65,9 @@
     _web.navigationDelegate = self;
     _web.UIDelegate = self;
 #ifdef DEBUG
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 160400
     if (@available(iOS 16.4, *)) _web.inspectable = YES;
+#endif
 #endif
     [self.view addSubview:_web];
     [_web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:PBPanelURLString()]]];
@@ -193,14 +195,20 @@
     UIInterfaceOrientationMask mask = [self supportedInterfaceOrientations];
     UIInterfaceOrientation now = self.view.window.windowScene.interfaceOrientation;
     if (mask & (1 << now)) { [UIViewController attemptRotationToDeviceOrientation]; return; }
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 160000
+    // (the iOS 15.6 SDK the Linux/CI build uses does not declare these; the code below only runs on iOS 16+)
     if (@available(iOS 16.0, *)) {
         UIWindowSceneGeometryPreferencesIOS *p = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
         [self.view.window.windowScene requestGeometryUpdateWithPreferences:p errorHandler:nil];
-    } else {
+    } else
+#endif
+    {
         UIDeviceOrientation want = (mask & UIInterfaceOrientationMaskPortrait) ? UIDeviceOrientationPortrait : UIDeviceOrientationLandscapeLeft;
         [UIDevice.currentDevice setValue:@(want) forKey:@"orientation"];
     }
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 160000
     if (@available(iOS 16.0, *)) [self setNeedsUpdateOfSupportedInterfaceOrientations];
+#endif
     [UIViewController attemptRotationToDeviceOrientation];
 }
 
