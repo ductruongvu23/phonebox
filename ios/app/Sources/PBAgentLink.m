@@ -38,15 +38,12 @@ static NSString *PBHex(const unsigned char *d, size_t n) {
 
 @implementation PBPairFailure
 - (NSString *)message {
+    NSString *hosts = [self.hosts componentsJoinedByString:@", "];
     switch (self.kind) {
-        case PBPairUnreachable:
-            return [NSString stringWithFormat:@"%@ did not answer at %@. Check that the phone and the computer are on the same network and that the firewall allows PhoneBox.", self.pc, [self.hosts componentsJoinedByString:@", "]];
-        case PBPairCodeRejected:
-            return [NSString stringWithFormat:@"%@ refused the code. It works once, for five minutes: show a new QR code and try again.", self.pc];
-        case PBPairBadAnswer:
-            return [NSString stringWithFormat:@"%@ answered with an unexpected status (%ld).", self.pc, (long)self.code];
-        case PBPairWrongCertificate:
-            return @"The certificate is not the one in the QR code, so this is not the computer you confirmed. Nothing was paired.";
+        case PBPairUnreachable: return [NSString stringWithFormat:PBL(@"pair_failed_unreachable"), self.pc, hosts];
+        case PBPairCodeRejected: return [NSString stringWithFormat:PBL(@"pair_failed_code"), self.pc];
+        case PBPairBadAnswer: return [NSString stringWithFormat:PBL(@"pair_failed_answer"), self.pc, (int)self.code];
+        case PBPairWrongCertificate: return PBL(@"pair_failed_certificate");
     }
     return @"";
 }
@@ -162,6 +159,8 @@ static NSString *PBHex(const unsigned char *d, size_t n) {
 
 - (void)URLSession:(NSURLSession *)s didReceiveChallenge:(NSURLAuthenticationChallenge *)c completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))d { [self handleChallenge:c completionHandler:d]; }
 - (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didReceiveChallenge:(NSURLAuthenticationChallenge *)c completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))d { [self handleChallenge:c completionHandler:d]; }
+- (void)URLSession:(NSURLSession *)s webSocketTask:(NSURLSessionWebSocketTask *)t didCloseWithCode:(NSURLSessionWebSocketCloseCode)c reason:(NSData *)r { void (^cb)(void) = self.onWebSocketClose; if (cb) cb(); }
+- (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)e { if (e) { void (^cb)(void) = self.onWebSocketClose; if (cb) cb(); } }
 - (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t willPerformHTTPRedirection:(NSHTTPURLResponse *)r newRequest:(NSURLRequest *)n completionHandler:(void (^)(NSURLRequest *))d { d(nil); }
 @end
 
@@ -192,6 +191,9 @@ static NSString *PBHex(const unsigned char *d, size_t n) {
     // trackpad over HTTP: one in flight, the rest coalesced
     BOOL _tpInFlight;
     NSMutableArray<PBTrackpadEvent *> *_tpPending;
+    NSURLSessionWebSocketTask *_ws;       // low-latency trackpad over Wi-Fi (Android's TrackpadSocket)
+    NSURLSession *_wsSession;
+    NSTimeInterval _wsLastAttempt;
 }
 
 - (instancetype)init {
@@ -262,6 +264,7 @@ static NSString *PBHex(const unsigned char *d, size_t n) {
         _preferredHost = 0;
         [self saveLocked];
     }
+    { NSURLSessionWebSocketTask *t; @synchronized(self) { t = _ws; } if (t) [self closeWebSocket:t]; }
     [self changed];
     return YES;
 }
@@ -548,6 +551,11 @@ static PBReply *PBUnknownResult(void) {
 #pragma mark Trackpad
 
 - (void)sendTrackpad:(NSString *)type dx:(double)dx dy:(double)dy delta:(double)delta {
+    // On USB the HTTP path is as fast as it gets; on Wi-Fi a WebSocket avoids a request per event.
+    if (self.route != PBRouteUSB) {
+        NSString *json = [NSString stringWithFormat:@"{\"type\":\"%@\",\"dx\":%g,\"dy\":%g,\"delta\":%g}", type, dx, dy, delta];
+        if (json.length <= 125 && [self wsSend:json]) return;
+    }
     PBTrackpadEvent *e = [PBTrackpadEvent new];
     e.type = type; e.dx = dx; e.dy = dy; e.delta = delta;
     @synchronized(_tpPending) {
@@ -576,7 +584,60 @@ static PBReply *PBUnknownResult(void) {
     });
 }
 
+#pragma mark Trackpad WebSocket
+
+- (BOOL)wsSend:(NSString *)json {
+    NSURLSessionWebSocketTask *t;
+    @synchronized(self) { t = _ws; }
+    if (!t || t.state != NSURLSessionTaskStateRunning) { [self ensureWebSocket]; return NO; }
+    [t sendMessage:[[NSURLSessionWebSocketMessage alloc] initWithString:json] completionHandler:^(NSError *error) {
+        if (error) [self closeWebSocket:t];
+    }];
+    return YES;
+}
+
+/// Opens wss://<host>:<port>/api/trackpad on the last host that worked, at most once every 3 s.
+- (void)ensureWebSocket {
+    NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
+    PBPc *pc = [self activePc];
+    if (!pc || !pc.hosts.count) return;
+    NSString *host;
+    @synchronized(self) {
+        if (_ws || now - _wsLastAttempt < 3) return;
+        _wsLastAttempt = now;
+        host = pc.hosts[_preferredHost < (NSInteger)pc.hosts.count ? _preferredHost : 0];
+    }
+    NSURLSessionConfiguration *cfg = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    cfg.URLCache = nil; cfg.HTTPCookieStorage = nil;
+    PBPinDelegate *delegate = [[PBPinDelegate alloc] initWithPin:pc.pcId];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg delegate:delegate delegateQueue:nil];
+    NSMutableURLRequest *r = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"wss://%@:%d/api/trackpad", host, pc.port]]];
+    [r setValue:[@"Bearer " stringByAppendingString:pc.token] forHTTPHeaderField:@"Authorization"];
+    NSURLSessionWebSocketTask *t = [session webSocketTaskWithRequest:r];
+    __weak NSURLSessionWebSocketTask *weak = t;
+    delegate.onWebSocketClose = ^{ NSURLSessionWebSocketTask *x = weak; if (x) [self closeWebSocket:x]; };
+    @synchronized(self) { _ws = t; _wsSession = session; }
+    [t resume];
+    [self receiveLoop:t]; // incoming frames are ignored, but reading is how a closed socket is noticed
+}
+
+- (void)receiveLoop:(NSURLSessionWebSocketTask *)t {
+    [t receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage *msg, NSError *error) {
+        if (error) { [self closeWebSocket:t]; return; }
+        [self receiveLoop:t];
+    }];
+}
+
+- (void)closeWebSocket:(NSURLSessionWebSocketTask *)t {
+    NSURLSession *s = nil;
+    @synchronized(self) { if (_ws == t) { _ws = nil; s = _wsSession; _wsSession = nil; } }
+    [t cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+    [s invalidateAndCancel];
+}
+
 - (void)close {
+    NSURLSessionWebSocketTask *t; @synchronized(self) { t = _ws; }
+    if (t) [self closeWebSocket:t];
     @synchronized(self) { _closed = YES; }
     [_usbSession invalidateAndCancel];
     @synchronized(self) { for (NSURLSession *s in _wifiSessions.allValues) [s invalidateAndCancel]; }

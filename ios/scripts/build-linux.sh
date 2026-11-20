@@ -18,7 +18,8 @@ cc -framework UIKit -framework WebKit -framework Foundation -framework Speech \
 
 cp "$APP/Resources/Info.plist" "$BUNDLE/Info.plist"
 cp -R "$APP/Resources/www" "$BUNDLE/www"
-for png in "$APP"/Resources/AppIcon*@*.png; do cp "$png" "$BUNDLE/"; done # the 1024 px master stays out of the bundle
+for png in "$APP"/Resources/AppIcon*@*.png; do cp "$png" "$BUNDLE/"; done
+cp -R "$APP"/Resources/*.lproj "$BUNDLE/" # Localizable.strings: en, vi, el (gen-strings.py) # the 1024 px master stays out of the bundle
 
 if [ "${PLATFORM:-}" = simulator ]; then
   codesign -f -s - --entitlements "$APP/entitlements.plist" "$BUNDLE"

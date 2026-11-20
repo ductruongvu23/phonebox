@@ -6,6 +6,8 @@ NSString *const PBKeyPrevNotification = @"com.ductruongvu23.phonebox.key.prev";
 NSString *const PBKeyNextNotification = @"com.ductruongvu23.phonebox.key.next";
 NSString *const PBBackNotification = @"com.ductruongvu23.phonebox.back";
 NSString *const PBLuxNotification = @"com.ductruongvu23.phonebox.lux";
+const uint64_t PBLuxPresent = 1ULL << 62;
+const uint64_t PBLuxMask = (1ULL << 62) - 1;
 
 static uint64_t gFlags = PBFlagVolumeKeys; // the panel's default: volume keys flip pages
 static int gToken = 0;

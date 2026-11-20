@@ -5,6 +5,8 @@
 ///   2. Wi-Fi: https://<host>:<port>, token + SHA-256 pin of the agent's self-signed certificate.
 /// A USB cable always wins. POSTs are never retried on another route once the body may have been sent.
 
+#define PBL(key) NSLocalizedString(key, nil) // the native dialogs, in the Android shell's languages (en, vi, el)
+
 typedef NS_ENUM(NSInteger, PBRoute) { PBRouteNone = 0, PBRouteUSB, PBRouteWiFi };
 FOUNDATION_EXPORT NSString *PBRouteName(PBRoute route); // "usb" | "wifi" | "none"
 
@@ -51,6 +53,7 @@ typedef NS_ENUM(NSInteger, PBPairFailureKind) {
 @interface PBPinDelegate : NSObject <NSURLSessionDelegate, NSURLSessionTaskDelegate>
 @property (nonatomic, copy) NSString *pin;
 @property (atomic) BOOL pinMismatch;
+@property (nonatomic, copy) void (^onWebSocketClose)(void); // trackpad socket ended
 - (instancetype)initWithPin:(NSString *)pin;
 - (void)handleChallenge:(NSURLAuthenticationChallenge *)challenge
       completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler;

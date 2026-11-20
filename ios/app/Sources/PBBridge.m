@@ -39,6 +39,19 @@
 
 #pragma mark State the panel reads synchronously
 
+BOOL PBProximitySupported(void) {
+    static BOOL known, supported;
+    if (!known) {
+        UIDevice *d = UIDevice.currentDevice;
+        BOOL was = d.proximityMonitoringEnabled;
+        d.proximityMonitoringEnabled = YES;
+        supported = d.proximityMonitoringEnabled; // stays NO on a device without the sensor (and in the Simulator)
+        d.proximityMonitoringEnabled = was;
+        known = YES;
+    }
+    return supported;
+}
+
 static BOOL PBIs24Hour(void) {
     NSString *f = [NSDateFormatter dateFormatFromTemplate:@"j" options:0 locale:NSLocale.currentLocale] ?: @"";
     return [f rangeOfString:@"a"].location == NSNotFound;
@@ -52,7 +65,7 @@ static BOOL PBIs24Hour(void) {
         @"battery": @{@"level": @(level < 0 ? -1 : (int)lroundf(level * 100)), @"plugged": @(plugged), @"temp": @0, @"source": @"", @"usb": NSNull.null},
         @"transport": PBRouteName(_link.route),
         @"is24Hour": @(PBIs24Hour()),
-        @"sensors": @{@"light": @NO, @"proximity": @NO}, // the SpringBoard tweak reports light when it is installed
+        @"sensors": @{@"light": @((PBNotifyState(PBLuxNotification) & PBLuxPresent) != 0), @"proximity": @(PBProximitySupported())}, // light: only with the SpringBoard tweak
         @"pcs": [NSJSONSerialization JSONObjectWithData:[_link.pcsJSON dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] ?: @[],
         @"version": _link.appVersion ?: @"",
         @"canListen": @(_dictation.available),
@@ -178,8 +191,8 @@ static void PBDarwinCallback(CFNotificationCenterRef c, void *observer, CFString
     else if ([name isEqualToString:PBKeyNextNotification]) [self.host bridgeEvaluate:@"window.onAndroidKey && window.onAndroidKey('next')"];
     else if ([name isEqualToString:PBBackNotification]) [self.host bridgeEvaluate:@"window.onAndroidBack && window.onAndroidBack()"];
     else if ([name isEqualToString:PBLuxNotification]) {
-        double lux = PBNotifyState(PBLuxNotification) / 100.0;
-        [self.host bridgeEvaluate:[NSString stringWithFormat:@"window.__pbNative && (window.__pbNative.sensors = {light: true, proximity: false}); window.onAndroidSensor && window.onAndroidSensor('light', %g)", lux]];
+        double lux = (PBNotifyState(PBLuxNotification) & PBLuxMask) / 100.0;
+        [self.host bridgeEvaluate:[NSString stringWithFormat:@"window.__pbNative && window.__pbNative.sensors && (window.__pbNative.sensors.light = true); window.onAndroidSensor && window.onAndroidSensor('light', %g)", lux]];
     }
 }
 

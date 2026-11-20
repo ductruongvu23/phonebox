@@ -7,7 +7,9 @@ FOUNDATION_EXPORT NSString *const PBFlagsNotification;   // state: bit mask of P
 FOUNDATION_EXPORT NSString *const PBKeyPrevNotification;  // volume up
 FOUNDATION_EXPORT NSString *const PBKeyNextNotification;  // volume down
 FOUNDATION_EXPORT NSString *const PBBackNotification;     // Home button while kiosk is on
-FOUNDATION_EXPORT NSString *const PBLuxNotification;      // state: lux * 100
+FOUNDATION_EXPORT NSString *const PBLuxNotification;      // state: bit 62 = a light sensor exists, low bits = lux * 100
+FOUNDATION_EXPORT const uint64_t PBLuxPresent;            // 1 << 62
+FOUNDATION_EXPORT const uint64_t PBLuxMask;               // the low bits
 
 typedef NS_OPTIONS(uint64_t, PBFlag) {
     PBFlagVolumeKeys = 1 << 0, // volume keys flip pages

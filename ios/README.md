@@ -74,6 +74,21 @@ off or keep the phone unlocked while it is plugged in.
 The tweak uses private SpringBoard methods and logs which hooks it found ("PhoneBoxSB:" in the device log); a hook that
 does not exist on your iOS is skipped and the rest keeps working.
 
+## Android parity
+
+| Android feature | iOS |
+|---|---|
+| Panel, 66 widget types, stream, USB, Wi-Fi + QR pairing, certificate pinning | yes |
+| Native dialogs in en / vi / el | yes (`scripts/gen-strings.py` turns the Android string files into `Localizable.strings`) |
+| Brightness, orientation, haptic/buzz, battery, 24-hour setting, dictation, trackpad | yes. Trackpad uses a WebSocket on Wi-Fi like Android, HTTP on USB |
+| Proximity wake of the night screen | yes, while the panel is dimmed (iOS blanks the display when the sensor is covered, so it is off in the daytime) |
+| Ambient light | with the jailbreak package (IOKit HID light sensor), shown in `phoneboxd status` as `lux=` |
+| Volume keys flip pages, Home = back (kiosk), reopen when closed, wake/sleep with the PC lock | with the jailbreak package |
+| Quick Settings tile | no iOS equivalent (Control Center cannot host third-party tiles without a widget extension) |
+| Screen pinning (`setPinned` without a jailbreak) | no: Guided Access is the iOS equivalent and only the user can start it |
+| Use as home screen (`setHomeScreen`) | no without a jailbreak: iOS has no home-app role; with the package, Home reopens PhoneBox |
+| Automatic update of the phone app | no: the agent updates an APK; iOS builds are updated through TrollStore / Sileo |
+
 ## What is verified
 
 Run in the iOS Simulator (iOS 26.5, against a stand-in agent and a stand-in PC that plays `IosUsb.cs`):

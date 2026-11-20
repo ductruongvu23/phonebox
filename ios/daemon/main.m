@@ -27,8 +27,10 @@ static NSString *PBRun(NSString *cmd) {
     if ([cmd isEqualToString:@"open"]) { notify_post(PBCmdOpen.UTF8String); return @"ok"; }
     if ([cmd isEqualToString:@"status"]) {
         uint64_t f = PBNotifyState(PBFlagsNotification);
-        return [NSString stringWithFormat:@"ok foreground=%d volumekeys=%d pinned=%d homescreen=%d",
-                !!(f & PBFlagForeground), !!(f & PBFlagVolumeKeys), !!(f & PBFlagPinned), !!(f & PBFlagHomeScreen)];
+        uint64_t l = PBNotifyState(PBLuxNotification);
+        return [NSString stringWithFormat:@"ok foreground=%d volumekeys=%d pinned=%d homescreen=%d lux=%@",
+                !!(f & PBFlagForeground), !!(f & PBFlagVolumeKeys), !!(f & PBFlagPinned), !!(f & PBFlagHomeScreen),
+                (l & PBLuxPresent) ? [NSString stringWithFormat:@"%.2f", (l & PBLuxMask) / 100.0] : @"none"];
     }
     return @"error unknown command";
 }

@@ -1,6 +1,9 @@
 #import <WebKit/WebKit.h>
 #import "PBAgentLink.h"
 
+/// Whether this iPhone has a proximity sensor (public API: UIDevice.proximityMonitoringEnabled).
+FOUNDATION_EXPORT BOOL PBProximitySupported(void);
+
 @protocol PBBridgeHost <NSObject>
 - (void)bridgeEvaluate:(NSString *)script;
 - (void)bridgeReloadPanel;

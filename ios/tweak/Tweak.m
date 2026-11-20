@@ -14,6 +14,7 @@
 #import <objc/message.h>
 #import <notify.h>
 #import <dlfcn.h>
+#import <QuartzCore/QuartzCore.h>
 #import "PBFlags.h"
 
 static NSString *const kBundleID = @"com.ductruongvu23.phonebox";
@@ -99,10 +100,76 @@ static BOOL PBHome(id self) {
     return NO;
 }
 
+
+#pragma mark Ambient light sensor (IOKit HID, private)
+
+// The light sensor is an HID service (usage page 0xFF00, usage 4). Its events carry the level in field (type << 16).
+typedef struct __IOHIDEventSystemClient *PBHIDClient;
+typedef struct __IOHIDServiceClient *PBHIDService;
+typedef struct __IOHIDEvent *PBHIDEvent;
+typedef void (*PBHIDCallback)(void *target, void *refcon, void *sender, PBHIDEvent event);
+static PBHIDClient (*pHIDCreate)(CFAllocatorRef);
+static void (*pHIDSetMatching)(PBHIDClient, CFDictionaryRef);
+static CFArrayRef (*pHIDCopyServices)(PBHIDClient);
+static void (*pHIDSchedule)(PBHIDClient, CFRunLoopRef, CFStringRef);
+static void (*pHIDRegister)(PBHIDClient, PBHIDCallback, void *, void *);
+static int (*pHIDSetProperty)(PBHIDService, CFStringRef, CFTypeRef);
+static int (*pHIDEventType)(PBHIDEvent);
+static long long (*pHIDEventInt)(PBHIDEvent, int);
+static double (*pHIDEventFloat)(PBHIDEvent, int);
+static int gLuxToken = 0;
+static double gLastLux = -1;
+static CFTimeInterval gLastLuxAt = 0;
+
+static void PBLightEvent(void *target, void *refcon, void *sender, PBHIDEvent event) {
+    if (!event || pHIDEventType(event) != 12) return; // kIOHIDEventTypeAmbientLightSensor
+    double lux = pHIDEventFloat ? pHIDEventFloat(event, 12 << 16) : (double)pHIDEventInt(event, 12 << 16);
+    if (lux < 0 || lux > 200000) return;
+    CFTimeInterval now = CACurrentMediaTime();
+    // the panel wants a change that matters, not a stream: same rule as the Android shell
+    BOOL jump = gLastLux < 0 || fabs(lux - gLastLux) > MAX(3.0, gLastLux * 0.15);
+    if (!jump && now - gLastLuxAt < 10) return;
+    if (now - gLastLuxAt < 0.7) return;
+    gLastLux = lux; gLastLuxAt = now;
+    if (!gLuxToken) notify_register_check(PBLuxNotification.UTF8String, &gLuxToken);
+    notify_set_state(gLuxToken, PBLuxPresent | (uint64_t)(lux * 100));
+    notify_post(PBLuxNotification.UTF8String);
+}
+
+static void PBStartLight(void) {
+    void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    if (!iokit) { NSLog(@"PhoneBoxSB: no IOKit"); return; }
+    pHIDCreate = dlsym(iokit, "IOHIDEventSystemClientCreate");
+    pHIDSetMatching = dlsym(iokit, "IOHIDEventSystemClientSetMatching");
+    pHIDCopyServices = dlsym(iokit, "IOHIDEventSystemClientCopyServices");
+    pHIDSchedule = dlsym(iokit, "IOHIDEventSystemClientScheduleWithRunLoop");
+    pHIDRegister = dlsym(iokit, "IOHIDEventSystemClientRegisterEventCallback");
+    pHIDSetProperty = dlsym(iokit, "IOHIDServiceClientSetProperty");
+    pHIDEventType = dlsym(iokit, "IOHIDEventGetType");
+    pHIDEventInt = dlsym(iokit, "IOHIDEventGetIntegerValue");
+    pHIDEventFloat = dlsym(iokit, "IOHIDEventGetFloatValue");
+    if (!pHIDCreate || !pHIDSetMatching || !pHIDCopyServices || !pHIDSchedule || !pHIDRegister || !pHIDEventType || !pHIDEventInt) {
+        NSLog(@"PhoneBoxSB: IOHID symbols missing, no light sensor"); return;
+    }
+    static PBHIDClient client;
+    client = pHIDCreate(kCFAllocatorDefault);
+    pHIDSetMatching(client, (__bridge CFDictionaryRef)@{@"PrimaryUsagePage": @0xff00, @"PrimaryUsage": @4});
+    CFArrayRef services = pHIDCopyServices(client);
+    CFIndex n = services ? CFArrayGetCount(services) : 0;
+    NSLog(@"PhoneBoxSB: %ld light sensor service(s)", (long)n);
+    if (n == 0) { if (services) CFRelease(services); return; }
+    if (pHIDSetProperty) for (CFIndex i = 0; i < n; i++)
+        pHIDSetProperty((PBHIDService)CFArrayGetValueAtIndex(services, i), CFSTR("ReportInterval"), (__bridge CFTypeRef)@1000000);
+    CFRelease(services);
+    pHIDSchedule(client, CFRunLoopGetMain(), kCFRunLoopDefaultMode);
+    pHIDRegister(client, PBLightEvent, NULL, NULL);
+}
+
 __attribute__((constructor)) static void PBInit(void) {
     @autoreleasepool {
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.springboard"]) return;
         NSLog(@"PhoneBoxSB: loaded");
+        dispatch_async(dispatch_get_main_queue(), ^{ PBStartLight(); });
 
         // volume keys: the panel in front and "volume keys flip pages" on
         BOOL (^flip)(NSString *) = ^BOOL(NSString *which) {

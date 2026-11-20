@@ -40,6 +40,10 @@
     cfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     [cfg.userContentController addUserScript:[_bridge initialStateScript]];
     [cfg.userContentController addScriptMessageHandler:_bridge name:@"phonebox"];
+    // Android sets textZoom = 100: the same here, or Safari enlarges text on its own in landscape.
+    [cfg.userContentController addUserScript:[[WKUserScript alloc] initWithSource:
+        @"(function(){var s=document.createElement('style');s.textContent='html{-webkit-text-size-adjust:100%}';(document.head||document.documentElement).appendChild(s)})()"
+        injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
 #ifdef DEBUG
     // Debug builds only: page errors with their stack go to the device log (the panel's own box only says "Script error.").
     [cfg.userContentController addUserScript:[[WKUserScript alloc] initWithSource:
@@ -97,6 +101,7 @@
     [_bridge appWillResignActive];
     // brightness is system-wide on iOS: give it back whenever the app is not in front
     if (_brightnessOverridden) UIScreen.mainScreen.brightness = _savedBrightness;
+    [self setProximity:NO];
 }
 
 #ifdef DEBUG
@@ -109,6 +114,24 @@
     });
 }
 #endif
+
+- (void)setProximity:(BOOL)on {
+    if (!PBProximitySupported()) return;
+    UIDevice *d = UIDevice.currentDevice;
+    if (d.proximityMonitoringEnabled == on) return;
+    d.proximityMonitoringEnabled = on;
+    NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+    if (on) {
+        [nc addObserver:self selector:@selector(proximityChanged) name:UIDeviceProximityStateDidChangeNotification object:nil];
+        [self proximityChanged];
+    } else {
+        [nc removeObserver:self name:UIDeviceProximityStateDidChangeNotification object:nil];
+    }
+}
+
+- (void)proximityChanged {
+    [self bridgeEvaluate:[NSString stringWithFormat:@"window.onAndroidSensor && window.onAndroidSensor('proximity', %@)", UIDevice.currentDevice.proximityState ? @"true" : @"false"]];
+}
 
 #pragma mark PBBridgeHost
 
@@ -127,6 +150,9 @@
 
 - (void)bridgeSetBrightness:(double)value {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // A hand near the phone wakes the night screen (onAndroidSensor 'proximity'). iOS blanks the display while its proximity
+        // sensor is covered, so the sensor is only on while the panel is dimmed, never in the daytime.
+        [self setProximity:(value >= 0 && value <= 0.1)];
         if (value < 0) {
             if (self->_brightnessOverridden) UIScreen.mainScreen.brightness = self->_savedBrightness;
             self->_brightnessOverridden = NO;
@@ -186,26 +212,26 @@
 
 - (void)handlePairLink:(PBPairLink *)pairing {
     if (!pairing) return;
-    NSString *msg = [NSString stringWithFormat:@"Pair this phone with %@?\n\nAddresses: %@\nPort: %d\n\nThe computer shows the code %@ next to the QR code. Only pair if they match.",
-                     pairing.pc, [pairing.hosts componentsJoinedByString:@", "], pairing.port, pairing.check];
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Pair with a computer" message:msg preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"Pair" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { [self pair:pairing]; }]];
+    NSString *msg = [NSString stringWithFormat:PBL(@"pair_message"), pairing.pc, [pairing.hosts componentsJoinedByString:@", "], pairing.port, pairing.check];
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:PBL(@"pair_title") message:msg preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:PBL(@"pair_negative") style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:PBL(@"pair_positive") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { [self pair:pairing]; }]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)pair:(PBPairLink *)pairing {
+    [self toast:[NSString stringWithFormat:PBL(@"pair_progress"), pairing.pc]];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         PBPairFailure *problem = [self->_link claim:pairing];
         dispatch_async(dispatch_get_main_queue(), ^{
             UIAlertController *a;
             if (!problem) {
-                a = [UIAlertController alertControllerWithTitle:@"Paired" message:[NSString stringWithFormat:@"%@ is paired. The panel reloads over Wi-Fi.", pairing.pc] preferredStyle:UIAlertControllerStyleAlert];
+                a = [UIAlertController alertControllerWithTitle:nil message:[NSString stringWithFormat:PBL(@"pair_done"), pairing.pc] preferredStyle:UIAlertControllerStyleAlert];
                 [self bridgeReloadPanel];
             } else {
-                a = [UIAlertController alertControllerWithTitle:@"Pairing failed" message:problem.message preferredStyle:UIAlertControllerStyleAlert];
+                a = [UIAlertController alertControllerWithTitle:PBL(@"pair_failed_title") message:problem.message preferredStyle:UIAlertControllerStyleAlert];
             }
-            [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [a addAction:[UIAlertAction actionWithTitle:PBL(@"ok") style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:a animated:YES completion:nil];
         });
     });
@@ -215,13 +241,30 @@
     NSLog(@"PBWEB %@ (main=%d)", message.body, message.frameInfo.isMainFrame);
 }
 
+/// A short message at the bottom (Android's Toast).
+- (void)toast:(NSString *)text {
+    UILabel *l = [UILabel new];
+    l.text = [NSString stringWithFormat:@"  %@  ", text];
+    l.textColor = UIColor.whiteColor; l.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.95];
+    l.font = [UIFont systemFontOfSize:14]; l.layer.cornerRadius = 14; l.clipsToBounds = YES; l.numberOfLines = 2;
+    [l sizeToFit];
+    CGFloat w = MIN(l.bounds.size.width + 8, self.view.bounds.size.width - 40);
+    l.frame = CGRectMake((self.view.bounds.size.width - w) / 2, self.view.bounds.size.height - 70, w, 32);
+    l.textAlignment = NSTextAlignmentCenter;
+    [self.view addSubview:l];
+    [UIView animateWithDuration:0.3 delay:2.5 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL f) { [l removeFromSuperview]; }];
+}
+
 #pragma mark WKNavigationDelegate / WKUIDelegate
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))handler {
     // the panel never leaves its own origin; an external link is dropped, not opened in the kiosk
     NSURL *u = action.request.URL;
     BOOL own = [u.scheme isEqualToString:PBScheme] || [u.scheme isEqualToString:@"about"] || [u.scheme isEqualToString:@"blob"] || [u.scheme isEqualToString:@"data"];
-    handler(own ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+    // The Web widget shows a page in an iframe: sub-frames may load https (the Android WebView allows it too). Only the
+    // top-level page is held to the panel's own origin, so a link cannot replace the kiosk with a website.
+    BOOL subframe = action.targetFrame != nil && !action.targetFrame.isMainFrame && [u.scheme isEqualToString:@"https"];
+    handler(own || subframe ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
 }
 
 #ifdef DEBUG
