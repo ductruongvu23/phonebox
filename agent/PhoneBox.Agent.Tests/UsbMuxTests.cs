@@ -274,3 +274,56 @@ public sealed class IosUsbProblemTests
     [InlineData(null, false)]
     public void Only_the_iOS_app_counts_as_Apple(string? model, bool apple) => Assert.Equal(apple, PhoneRegistry.IsApple(model));
 }
+
+public sealed class IosUsbRewriteTests
+{
+    [Fact]
+    public void The_status_line_of_phoneboxd_is_read()
+    {
+        var s = IosUsb.ParseHelperStatus("ok foreground=1 volumekeys=0 pinned=0 homescreen=1 lux=152.50 fields=21/153/12");
+        Assert.NotNull(s);
+        Assert.True(s!.Foreground);
+        Assert.False(s.VolumeKeys);
+        Assert.True(s.HomeScreen);
+        Assert.Equal(152.5, s.Lux);
+    }
+
+    [Fact]
+    public void No_light_sensor_reading_is_null_and_an_error_line_is_not_a_status()
+    {
+        Assert.Null(IosUsb.ParseHelperStatus("ok foreground=0 volumekeys=1 pinned=0 homescreen=0 lux=none")!.Lux);
+        Assert.Null(IosUsb.ParseHelperStatus("error unknown command"));
+        Assert.Null(IosUsb.ParseHelperStatus(null));
+        Assert.Null(IosUsb.ParseHelperStatus(""));
+    }
+
+    [Theory]
+    [InlineData(1, 3)]
+    [InlineData(2, 6)]
+    [InlineData(3, 12)]
+    [InlineData(4, 24)]
+    [InlineData(5, 30)]
+    [InlineData(40, 30)]
+    [InlineData(0, 3)]
+    public void The_pause_after_failed_tries_grows_to_a_limit(int failures, double seconds) => Assert.Equal(seconds, IosUsb.BackoffSeconds(failures));
+
+    [Theory]
+    [InlineData(0, 4)]
+    [InlineData(-3, 4)]
+    [InlineData(1, 1)]
+    [InlineData(8, 8)]
+    [InlineData(99, 16)]
+    public void The_pool_size_comes_from_the_config_within_limits(int configured, int expected)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "phonebox-pool-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "config.json");
+            File.WriteAllText(path, $$"""{"iosPoolSize":{{configured}}}""");
+            using var ios = new IosUsb(new ConfigStore(path), NullLogger<IosUsb>.Instance);
+            Assert.Equal(expected, ios.PoolSize);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+}

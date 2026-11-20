@@ -40,9 +40,53 @@ jobs:
             ios/build/PhoneBox.ipa
             ios/build/*.deb
 
+  # The desktop agent with the iPhone USB support (IosUsb), self-contained, for the release. Same build as the upstream release
+  # workflow, but UNSIGNED: no SignPath or macOS certificate here, so Windows SmartScreen warns and a Mac asks for the
+  # Accessibility permission again after each update.
+  agent:
+    if: startsWith(github.ref, 'refs/tags/ios-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64, tfm: net10.0-windows10.0.19041.0 }
+          - { os: ubuntu-latest, rid: linux-x64, tfm: net10.0 }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, tfm: net10.0 }
+          - { os: macos-latest, rid: osx-arm64, tfm: net10.0 }
+          - { os: macos-15-intel, rid: osx-x64, tfm: net10.0 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Version
+        id: v
+        shell: bash
+        run: echo "version=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' agent/PhoneBox.Agent/PhoneBox.Agent.csproj | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Unit tests
+        run: dotnet test agent/PhoneBox.Agent.Tests --nologo
+      - name: Publish (self-contained, single file)
+        run: dotnet publish agent/PhoneBox.Agent -c Release -f ${{ matrix.tfm }} -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o out --nologo
+      - name: Smoke-test the published agent
+        shell: pwsh
+        run: |
+          $exe = if ($IsWindows) { 'out/PhoneBoxAgent.exe' } else { 'out/PhoneBoxAgent' }
+          python tools/smoke-agent.py $exe --version '${{ steps.v.outputs.version }}'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path out/* -DestinationPath "dist/PhoneBoxAgent-ios-${{ steps.v.outputs.version }}-${{ matrix.rid }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-agent-${{ matrix.rid }}
+          path: dist/
+
   release:
     if: startsWith(github.ref, 'refs/tags/ios-v')
-    needs: build
+    needs: [build, agent]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -52,9 +96,14 @@ jobs:
         with:
           name: phonebox-ios
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-agent-*
+          merge-multiple: true
+          path: dist
       - name: Checksums
-        run: cd dist && find . -type f \( -name '*.ipa' -o -name '*.deb' \) -exec sha256sum {} + > SHA256SUMS.txt
+        run: cd dist && find . -type f \( -name '*.ipa' -o -name '*.deb' -o -name '*.zip' \) -exec sha256sum {} + > SHA256SUMS.txt
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "PhoneBox for iOS ${GITHUB_REF_NAME#ios-v}" --notes "iPhone app (.ipa, TrollStore) and rootless jailbreak package (.deb, Sileo/Zebra)." $(find dist -type f)
+        run: gh release create "$GITHUB_REF_NAME" --title "PhoneBox for iOS ${GITHUB_REF_NAME#ios-v}" --notes "iPhone app (.ipa, TrollStore), rootless jailbreak package (.deb, Sileo/Zebra) and the desktop agent with iPhone USB support (PhoneBoxAgent-ios-*.zip for Windows, macOS and Linux; unsigned builds)." $(find dist -type f)

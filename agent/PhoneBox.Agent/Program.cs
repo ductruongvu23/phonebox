@@ -427,6 +427,8 @@ app.MapGet("/api/info", (AdbReverse adb, IosUsb ios, ConfigStore cfg) => Results
     webviewProblem = WebViewDoctor.DiagnoseRecent(PhoneRegistry.All(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
 }));
 
+// iPhones on USB: the tunnel pool and, with PhoneBox Extras, what the phone-side daemon reports
+app.MapGet("/api/ios", (IosUsb ios) => Results.Json(ios.Snapshot()));
 app.MapPost("/api/phone/open", async (AdbReverse adb, IosUsb ios) => { await adb.OpenPanelAsync(); await ios.OpenPanelAsync(CancellationToken.None); return Results.Ok(); });
 
 // Widget types and page templates for the settings page's layout editor.

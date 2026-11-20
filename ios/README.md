@@ -64,6 +64,16 @@ HTTP and SSE run through unchanged, so `PBAgentLink` needs no special case.
 - Quick manual check without the agent: `iproxy 2222 22` then
   `ssh -p 2222 -N -R 8765:127.0.0.1:8765 mobile@127.0.0.1` (needs SSH on the phone).
 
+## On the computer (agent)
+
+The agent talks to iPhones through usbmuxd (`UsbMux.cs`) and keeps the tunnel pool (`IosUsb.cs`). It needs usbmuxd: built into
+macOS, Apple Devices / iTunes on Windows, the `usbmuxd` package on Linux. Settings in `config.json`: `iosUsb` (on by default) and
+`iosPoolSize` (idle USB connections per phone, 1 to 16, default 4). A phone that refuses connections is retried after 3, 6, 12, 24 and
+then 30 seconds. `GET /api/ios` shows usbmux, the pool size and each iPhone on USB with its tunnels and, when PhoneBox Extras is installed,
+what its daemon reports (app in front, volume keys, light level). The settings page says in words why an iPhone has no USB tunnel.
+Releases named `ios-v*` carry the agent as `PhoneBoxAgent-ios-<version>-<platform>.zip` (Windows x64; macOS Apple silicon and Intel; Linux x64 and ARM64).
+These are **unsigned**: Windows SmartScreen warns, and a Mac asks for the Accessibility permission again after every update.
+
 ## Jailbreak package (rootless, Dopamine)
 
 `ios/scripts/build-deb.sh` (or `make package` with Theos) builds `com.ductruongvu23.phonebox-jb`:

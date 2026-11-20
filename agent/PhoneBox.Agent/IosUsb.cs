@@ -18,7 +18,35 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
     public const int DevicePort = 8767;
     /// <summary>Port of phoneboxd's control channel on a jailbroken iPhone: wake, sleep, open, status.</summary>
     public const int ControlPort = 8768;
-    internal const int PoolSize = 4;
+    internal const int DefaultPoolSize = 4;
+
+    /// <summary>What the phone's PhoneBox Extras daemon (phoneboxd) says about the phone; null when it is not installed.</summary>
+    public sealed record HelperStatus(bool Foreground, bool VolumeKeys, bool Pinned, bool HomeScreen, double? Lux);
+
+    /// <summary>One iPhone on USB, as the settings page and /api/ios show it.</summary>
+    public sealed record IosPhone(string Serial, int Tunnels, HelperStatus? Helper);
+
+    public sealed record IosSnapshot(bool Enabled, bool Usbmux, int PoolSize, IosPhone[] Phones);
+
+    /// <summary>Everything the agent knows about iPhones on USB right now.</summary>
+    public IosSnapshot Snapshot() => new(cfg.Get().IosUsb, UsbmuxReachable, PoolSize,
+        [.. _devices.Values.Select(d => new IosPhone(d.Serial, d.Ready, d.Helper))]);
+
+    internal int PoolSize => Math.Clamp(cfg.Get().IosPoolSize is var n && n > 0 ? n : DefaultPoolSize, 1, 16);
+
+    /// <summary>Seconds to wait before the next try after <paramref name="failures"/> in a row: 3, 6, 12, 24, then 30.</summary>
+    internal static double BackoffSeconds(int failures) => Math.Min(30, 3 * Math.Pow(2, Math.Clamp(failures - 1, 0, 6)));
+
+    /// <summary>Reads phoneboxd's one-line answer to "status" ("ok foreground=1 volumekeys=1 … lux=152.00 fields=…").</summary>
+    internal static HelperStatus? ParseHelperStatus(string? line)
+    {
+        if (line is null || !line.StartsWith("ok", StringComparison.Ordinal)) return null;
+        var kv = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1)
+            .Select(p => p.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0], p => p[1]);
+        bool Flag(string k) => kv.TryGetValue(k, out var v) && v == "1";
+        double? lux = kv.TryGetValue("lux", out var l) && double.TryParse(l, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+        return new HelperStatus(Flag("foreground"), Flag("volumekeys"), Flag("pinned"), Flag("homescreen"), lux);
+    }
 
     private readonly ConcurrentDictionary<long, Device> _devices = new();
     private bool _lastConnected;
@@ -61,6 +89,7 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
         public CancellationTokenSource Cts { get; } = cts;
         public int Idle;
         public int Ready => Volatile.Read(ref Idle);
+        public volatile HelperStatus? Helper;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -102,6 +131,7 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
             log.LogInformation("iPhone attached ({Serial})", e.Serial);
             _ = Task.Run(() => PoolLoop(d, d.Cts.Token));
             _ = Task.Run(() => Greet(d, d.Cts.Token));
+            _ = Task.Run(() => HelperLoop(d, d.Cts.Token));
             Notify();
         }
         else if (_devices.TryRemove(e.DeviceId, out var gone))
@@ -127,24 +157,38 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
         StateChanged?.Invoke();
     }
 
-    /// <summary>Keeps <see cref="PoolSize"/> idle tunnels open to one phone.</summary>
+    /// <summary>Keeps <see cref="PoolSize"/> idle tunnels open to one phone; a phone that refuses is tried again after a growing pause.</summary>
     private async Task PoolLoop(Device d, CancellationToken ct)
     {
+        var failures = 0;
         while (!ct.IsCancellationRequested)
         {
             if (d.Ready >= PoolSize) { await Delay(0.25, ct); continue; }
             try
             {
                 var tunnel = await UsbMux.ConnectAsync(d.Id, DevicePort, ct);
+                failures = 0;
                 Interlocked.Increment(ref d.Idle);
                 _ = Task.Run(() => Serve(d, tunnel, ct));
             }
             catch (OperationCanceledException) { return; }
             catch (Exception)
             {
-                // the app is not running (nothing listens on the phone's port yet): look again in a moment
-                await Delay(3, ct);
+                // the app is not running (nothing listens on the phone's port yet): look again in a moment, less often the longer it lasts
+                await Delay(BackoffSeconds(++failures), ct);
             }
+        }
+    }
+
+    /// <summary>Asks phoneboxd for its status every 30 seconds while the phone is on USB (no answer: the package is not installed).</summary>
+    private async Task HelperLoop(Device d, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { d.Helper = ParseHelperStatus(await SendAsync(d.Id, "status", ct)); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+            catch (Exception) { d.Helper = null; }
+            await Delay(30, ct);
         }
     }
 

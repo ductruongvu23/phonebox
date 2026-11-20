@@ -14,6 +14,8 @@ public sealed class AgentConfig
     public string? AdbPath { get; set; }
     /// <summary>Tunnel for iPhones over USB (usbmuxd); on by default, harmless when no iPhone is plugged in.</summary>
     public bool IosUsb { get; set; } = true;
+    /// <summary>Idle USB connections kept open to each iPhone (1 to 16): more of them let the phone open more requests at once.</summary>
+    public int IosPoolSize { get; set; } = 4;
     public WeatherConfig Weather { get; set; } = new();
     public PingConfig Ping { get; set; } = new();
     public NightConfig Night { get; set; } = new();
