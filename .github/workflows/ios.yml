@@ -1,7 +1,5 @@
 name: iOS
 
-# NOTE: kept in ios/ci/ because pushing under .github/workflows needs a token with the "workflow" scope. Move it to
-# .github/workflows/ios.yml once you can push workflows.
 # Builds the iPhone app (.ipa for TrollStore) and the rootless jailbreak package (.deb) with plain clang on Linux.
 # Tag ios-v* to publish a GitHub Release and refresh the APT repo on the gh-pages branch.
 on:
