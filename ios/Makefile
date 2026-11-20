@@ -5,8 +5,7 @@ export TARGET = iphone:clang:latest:15.0
 
 include $(THEOS)/makefiles/common.mk
 
-SUBPROJECTS = app
-# SUBPROJECTS += daemon tweak   # phase 5
+SUBPROJECTS = app daemon tweak
 
 include $(THEOS_MAKE_PATH)/aggregate.mk
 

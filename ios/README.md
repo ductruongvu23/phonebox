@@ -4,18 +4,23 @@ Native shell for the PhoneBox panel on iPhone (target: iPhone 6s, iOS 15, Dopami
 It reuses the Android panel (`android/app/src/main/assets/www`) unchanged: `scripts/sync-www.sh` copies it
 into the app bundle and patches it for iOS. Follows upstream release **0.9.22**.
 
-Status: phase 0 (project skeleton, builds to a black-screen app). See the plan for the rest.
+Status: the app, the USB tunnel (iPhone and agent sides), the jailbreak extras and the build/CI scripts are written.
+What was run for real is listed under "What is verified" below.
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `app/` | The iOS app (Objective-C, Theos application). `Resources/www` is generated, not committed |
-| `app/bridge.js` | Shim for `window.Android` (phase 2) |
-| `daemon/`, `tweak/` | `phoneboxd` and the SpringBoard tweak (phase 5) |
+| `app/bridge.js` | The `window.Android` shim the panel expects |
+| `../agent/PhoneBox.Agent/IosUsb.cs`, `UsbMux.cs` | PC side of the USB tunnel (usbmuxd client) |
+| `daemon/` | `phoneboxd`: keeps the USB tunnel up with the app closed; wake/sleep/open commands from the PC |
+| `tweak/` | `PhoneBoxSB`: SpringBoard tweak (volume keys, Home button, wake/lock/launch) |
 | `layout/DEBIAN/` | Package control files for the rootless `.deb` |
 | `scripts/sync-www.sh` | Copy and patch the panel; safe to re-run |
 | `scripts/build-linux.sh` | Build `ios/build/PhoneBox.ipa` with plain clang (Linux or macOS) |
+| `scripts/build-deb.sh` | Build the rootless `.deb` (app + daemon + tweak) without Theos |
+| `scripts/make-apt-repo.py` | Turn `.deb` files into a Sileo/Zebra repo |
 | `Makefile`, `app/Makefile` | Theos build |
 
 ## Build
@@ -42,14 +47,40 @@ cd ios && make package
 
 Produces a rootless package (`/var/jb`) under `ios/packages/`.
 
-## Try the USB path before the real tunnel exists
+## How the USB tunnel works
 
-```bash
-iproxy 2222 22
-ssh -p 2222 -N -R 8765:127.0.0.1:8765 mobile@127.0.0.1
-```
+iOS has no `adb reverse`, and usbmuxd only lets the PC connect *into* the phone. So the agent (`IosUsb.cs`) keeps four
+idle usbmuxd connections open to port 8767 on the phone. When the app connects to `127.0.0.1:8765` on the phone,
+`PBUsbListener` splices that connection onto an idle one, and the agent pipes its first byte on to its own port.
+HTTP and SSE run through unchanged, so `PBAgentLink` needs no special case.
 
-The agent listens on `127.0.0.1:8765` on the PC; this makes it appear on the iPhone's loopback.
+- Both ports are bound to loopback only. 8765 is open only while the PC has an idle connection ready, so with no cable it
+  is refused instantly and the app falls back to Wi-Fi. A POST is never retried on another route after it may have been sent.
+- The app hosts the listener while it is open. With the jailbreak package, `phoneboxd` hosts it all the time (the app's
+  listener then finds the ports taken and does nothing).
+- Needs usbmuxd on the PC: built into macOS, "Apple Devices"/iTunes on Windows, the `usbmuxd` package on Linux.
+- Quick manual check without the agent: `iproxy 2222 22` then
+  `ssh -p 2222 -N -R 8765:127.0.0.1:8765 mobile@127.0.0.1` (needs SSH on the phone).
+
+## Jailbreak package (rootless, Dopamine)
+
+`ios/scripts/build-deb.sh` (or `make package` with Theos) builds `com.ductruongvu23.phonebox-jb`:
+the app in `/var/jb/Applications`, `phoneboxd` (LaunchDaemon), and `PhoneBoxSB.dylib` for SpringBoard.
+After installing, respring. Plugging the phone in wakes it and opens the panel; with "volume keys flip pages" on in the
+panel settings the volume buttons turn pages; kiosk mode makes Home return to the first page.
+The tweak uses private SpringBoard methods and logs which hooks it found ("PhoneBoxSB:" in the device log); a hook that
+does not exist on your iOS is skipped and the rest keeps working.
+
+## What is verified
+
+Run in the iOS Simulator (iOS 26.5, against a stand-in agent and a stand-in PC that plays `IosUsb.cs`):
+the panel renders, requests carry the identity headers, POST bodies arrive, a request without the panel header gets 403,
+widget iframes see neither `window.Android` nor the agent, the SSE stream delivers, and the USB tunnel carries
+requests and the stream; port 8765 closes when the PC goes away. `phoneboxd` was built and run on macOS: its commands
+become Darwin notifications.
+
+Not yet run: the C# (`IosUsb.cs`, `UsbMux.cs`, `UsbMuxTests.cs`; no .NET SDK was available), the Theos Makefiles,
+the SpringBoard hooks, dictation, anything on iOS 15 itself, and the Linux build path.
 
 ## Rules
 

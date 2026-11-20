@@ -422,7 +422,7 @@ app.MapGet("/api/info", (AdbReverse adb, IosUsb ios, ConfigStore cfg) => Results
     webviewProblem = WebViewDoctor.DiagnoseRecent(PhoneRegistry.All(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
 }));
 
-app.MapPost("/api/phone/open", async (AdbReverse adb) => { await adb.OpenPanelAsync(); return Results.Ok(); });
+app.MapPost("/api/phone/open", async (AdbReverse adb, IosUsb ios) => { await adb.OpenPanelAsync(); await ios.OpenPanelAsync(CancellationToken.None); return Results.Ok(); });
 
 // Widget types and page templates for the settings page's layout editor.
 app.MapGet("/api/catalog", () => Results.Text($"{{\"cols\":{Catalog.Cols},\"rows\":{Catalog.Rows},\"widgets\":{Catalog.WidgetsJson},\"templates\":{Catalog.TemplatesJson}}}",

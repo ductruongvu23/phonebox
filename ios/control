@@ -1,0 +1,9 @@
+Package: com.ductruongvu23.phonebox-jb
+Name: PhoneBox
+Version: 0.9.22
+Architecture: iphoneos-arm64
+Description: PhoneBox panel for iPhone: USB tunnel, wake and open on plug-in, volume keys, kiosk
+Maintainer: ductruongvu23
+Author: ductruongvu23
+Section: Utilities
+Depends: firmware (>= 15.0), ellekit

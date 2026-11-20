@@ -1,0 +1,7 @@
+#!/bin/sh
+# Rootless layout: everything lives under /var/jb.
+/var/jb/usr/bin/uicache -p /var/jb/Applications/PhoneBox.app 2>/dev/null || true
+launchctl unload /var/jb/Library/LaunchDaemons/com.ductruongvu23.phoneboxd.plist 2>/dev/null
+launchctl load -w /var/jb/Library/LaunchDaemons/com.ductruongvu23.phoneboxd.plist 2>/dev/null || true
+echo "PhoneBox installed. Respring (sbreload) to load the SpringBoard tweak."
+exit 0

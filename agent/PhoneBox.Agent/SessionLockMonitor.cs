@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace PhoneBox.Agent;
 
 /// <summary>Follows the current macOS console session while the option is enabled.</summary>
-public sealed class SessionLockMonitor(ConfigStore cfg, AdbReverse adb, ILogger<SessionLockMonitor> log) : BackgroundService
+public sealed class SessionLockMonitor(ConfigStore cfg, AdbReverse adb, ILogger<SessionLockMonitor> log, IosUsb? ios = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -15,6 +15,7 @@ public sealed class SessionLockMonitor(ConfigStore cfg, AdbReverse adb, ILogger<
                 if (cfg.Get().Display.FollowComputerLock && OperatingSystem.IsMacOS())
                 {
                     var available = await adb.SyncSessionAsync(ct);
+                    if (ios is not null) available &= await ios.SyncSessionAsync(ct);
                     if (!available && !warned)
                     {
                         log.LogWarning("Lock sync is unavailable; start the agent in the macOS GUI session");
@@ -24,6 +25,7 @@ public sealed class SessionLockMonitor(ConfigStore cfg, AdbReverse adb, ILogger<
                 else
                 {
                     await adb.ResetSessionAsync(ct);
+                    if (ios is not null) await ios.ResetSessionAsync(ct);
                     warned = false;
                 }
                 await Task.Delay(TimeSpan.FromSeconds(1), ct);

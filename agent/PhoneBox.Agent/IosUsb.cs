@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 
 namespace PhoneBox.Agent;
 
@@ -15,6 +16,8 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
 {
     /// <summary>Port on the iPhone that accepts the idle tunnels (loopback only; usbmuxd arrives from there).</summary>
     public const int DevicePort = 8767;
+    /// <summary>Port of phoneboxd's control channel on a jailbroken iPhone: wake, sleep, open, status.</summary>
+    public const int ControlPort = 8768;
     internal const int PoolSize = 4;
 
     private readonly ConcurrentDictionary<long, Device> _devices = new();
@@ -73,6 +76,7 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
             if (!_devices.TryAdd(e.DeviceId, d)) return;
             log.LogInformation("iPhone attached ({Serial})", e.Serial);
             _ = Task.Run(() => PoolLoop(d, d.Cts.Token));
+            _ = Task.Run(() => Greet(d, d.Cts.Token));
             Notify();
         }
         else if (_devices.TryRemove(e.DeviceId, out var gone))
@@ -143,6 +147,91 @@ public sealed class IosUsb(ConfigStore cfg, ILogger<IosUsb> log, AgentEndpoint? 
             Release();
             await tunnel.DisposeAsync();
         }
+    }
+
+    // ---------------------------------------------------------------- jailbreak extras (phoneboxd on the phone)
+
+    /// <summary>
+    /// Sends one command to phoneboxd on the phone and returns its one-line answer ("ok ..."). Throws when nothing
+    /// answers, which is normal for an iPhone without the jailbreak package.
+    /// </summary>
+    internal async Task<string> SendAsync(long deviceId, string command, CancellationToken ct)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(TimeSpan.FromSeconds(4));
+        await using var s = await UsbMux.ConnectAsync(deviceId, ControlPort, limit.Token);
+        await s.WriteAsync(Encoding.ASCII.GetBytes(command + "\n"), limit.Token);
+        var line = new StringBuilder();
+        var one = new byte[1];
+        while (line.Length < 200)
+        {
+            var n = await s.ReadAsync(one, limit.Token);
+            if (n == 0 || one[0] == (byte)'\n') break;
+            line.Append((char)one[0]);
+        }
+        return line.ToString().Trim();
+    }
+
+    /// <summary>Wakes the screen and opens the panel on every iPhone that has the jailbreak package.</summary>
+    public async Task OpenPanelAsync(CancellationToken ct)
+    {
+        foreach (var d in _devices.Values.ToArray()) await WakeAndOpen(d, ct);
+    }
+
+    private async Task WakeAndOpen(Device d, CancellationToken ct)
+    {
+        try
+        {
+            await SendAsync(d.Id, "wake", ct);
+            await SendAsync(d.Id, "open", ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { log.LogDebug("{Serial}: phoneboxd did not answer ({Message})", d.Serial, ex.Message); }
+    }
+
+    /// <summary>A phone plugged in: light it and open the panel, unless the computer is locked (then the lock sync decides).</summary>
+    private async Task Greet(Device d, CancellationToken ct)
+    {
+        try
+        {
+            // phoneboxd may still be starting: a few tries, then the phone simply has no jailbreak package
+            for (var attempt = 0; attempt < 5 && !ct.IsCancellationRequested; attempt++)
+            {
+                try
+                {
+                    if (cfg.Get().Display.FollowComputerLock && OperatingSystem.IsMacOS()) await SyncSessionAsync(ct, force: true);
+                    else { await SendAsync(d.Id, "wake", ct); await SendAsync(d.Id, "open", ct); }
+                    log.LogInformation("{Serial}: phone woken, panel opened", d.Serial);
+                    return;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (Exception) { await Delay(2, ct); }
+            }
+        }
+        catch (Exception) { }
+    }
+
+    private ScreenSynchronizer? _screenSync;
+    private ScreenSynchronizer ScreenSync => LazyInitializer.EnsureInitialized(ref _screenSync,
+        () => new ScreenSynchronizer(MacSessionLock.IsLocked, ApplyScreenAsync));
+
+    /// <summary>Makes the iPhones' screens follow the computer's lock (macOS), like <see cref="AdbReverse.SyncSessionAsync"/>.</summary>
+    public Task<bool> SyncSessionAsync(CancellationToken ct, bool force = false) =>
+        ScreenSync.ReconcileAsync([.. _devices.Values.Select(d => d.Serial)], ct, force);
+
+    public Task ResetSessionAsync(CancellationToken ct) => ScreenSync.ResetAsync(ct);
+
+    private async Task ApplyScreenAsync(string serial, bool locked, CancellationToken ct)
+    {
+        var d = _devices.Values.FirstOrDefault(x => x.Serial == serial);
+        if (d is null) return;
+        try
+        {
+            if (locked) await SendAsync(d.Id, "sleep", ct);
+            else { await SendAsync(d.Id, "wake", ct); await SendAsync(d.Id, "open", ct); }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { log.LogDebug("{Serial}: screen sync skipped ({Message})", serial, ex.Message); } // no phoneboxd: not an error
     }
 
     internal static async Task Pipe(Stream a, Stream b, CancellationToken ct)
