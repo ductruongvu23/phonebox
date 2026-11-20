@@ -103,7 +103,7 @@ newer.
 **iPhone / iPad (this fork).** There is an iOS app too, for jailbroken or TrollStore devices (iOS 15 and later, tested
 on an iPhone 6s). It shows the same panel and widgets, connects over USB or paired Wi-Fi, and with the optional
 *PhoneBox Extras* package (rootless jailbreak) also wakes and opens the panel when you plug in and turns the volume keys into
-page flips. See [ios/README.md](ios/README.md) for installing it, what works and what does not.
+page flips. See [ios/INSTALL.md](ios/INSTALL.md) for downloading and installing it on each system, and [ios/README.md](ios/README.md) for what works and what does not.
 
 For automatic USB/Wi-Fi fallback, enable Wi-Fi and connect the phone over USB once.
 [Connection details and Tailscale setup →](docs/SETUP.md#wi-fi--tailscale)

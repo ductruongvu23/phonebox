@@ -1,5 +1,7 @@
 # PhoneBox for iOS (jailbreak, rootless)
 
+**To install and connect, read [INSTALL.md](INSTALL.md)** (download links, TrollStore, Sileo, the computer side, USB and Wi-Fi, troubleshooting).
+
 Native shell for the PhoneBox panel on iPhone (target: iPhone 6s, iOS 15, Dopamine rootless).
 It reuses the Android panel (`android/app/src/main/assets/www`) unchanged: `scripts/sync-www.sh` copies it
 into the app bundle and patches it for iOS. Follows upstream release **0.9.22**.
