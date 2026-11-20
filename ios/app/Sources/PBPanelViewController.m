@@ -4,7 +4,7 @@
 #import "PBDictation.h"
 #import <WebKit/WebKit.h>
 
-@interface PBPanelViewController () <WKNavigationDelegate, WKUIDelegate>
+@interface PBPanelViewController () <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
 @end
 
 @implementation PBPanelViewController {
@@ -40,6 +40,13 @@
     cfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     [cfg.userContentController addUserScript:[_bridge initialStateScript]];
     [cfg.userContentController addScriptMessageHandler:_bridge name:@"phonebox"];
+#ifdef DEBUG
+    // Debug builds only: page errors with their stack go to the device log (the panel's own box only says "Script error.").
+    [cfg.userContentController addUserScript:[[WKUserScript alloc] initWithSource:
+        @"window.addEventListener('error',function(e){try{window.webkit.messageHandlers.pblog.postMessage(String(e.message)+' | '+(e.filename||'')+':'+e.lineno+':'+e.colno+' | '+((e.error&&e.error.stack)||'')+' | target='+(e.target&&e.target.tagName||''));}catch(_){} try{var d=String(e.message)+' @'+(e.filename||'?').split('/').pop()+':'+e.lineno+':'+e.colno+' '+((e.error&&e.error.stack)||'').split('\\n').slice(0,3).join(' < ');setTimeout(function(){window.__pbFail&&window.__pbFail('DBG '+d)},50)}catch(_){}},true);"
+        injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
+    [cfg.userContentController addScriptMessageHandler:(id<WKScriptMessageHandler>)self name:@"pblog"];
+#endif
 
     _web = [[WKWebView alloc] initWithFrame:self.view.bounds configuration:cfg];
     _web.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -182,6 +189,10 @@
             [self presentViewController:a animated:YES completion:nil];
         });
     });
+}
+
+- (void)userContentController:(WKUserContentController *)ucc didReceiveScriptMessage:(WKScriptMessage *)message {
+    NSLog(@"PBWEB %@ (main=%d)", message.body, message.frameInfo.isMainFrame);
 }
 
 #pragma mark WKNavigationDelegate / WKUIDelegate

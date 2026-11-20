@@ -19,8 +19,17 @@
   }
   // a polyfill must never break the panel: failures are shown in the panel's own error box and swallowed
   function guard(fn) { return function () { try { return fn.apply(this, arguments); } catch (e) { if (window.__pbFail) window.__pbFail('cq-polyfill: ' + (e && e.message)); } }; }
+  // Variables are set in the next frame, never inside the observer callback: changing layout there makes Safari report a
+  // "ResizeObserver loop" error, which the page sees as an uncatchable "Script error."
+  var queue = [], scheduled = false;
+  var flush = guard(function () {
+    scheduled = false;
+    var q = queue; queue = [];
+    q.forEach(function (e) { sizes.set(e.target, { w: e.contentRect.width, h: e.contentRect.height }); apply(e.target); });
+  });
   var ro = new ResizeObserver(guard(function (entries) {
-    entries.forEach(function (e) { sizes.set(e.target, { w: e.contentRect.width, h: e.contentRect.height }); apply(e.target); });
+    queue.push.apply(queue, entries);
+    if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
   }));
   // code that rewrites a container's style attribute drops the variables: put them back
   var styleWatch = new MutationObserver(guard(function (list) {

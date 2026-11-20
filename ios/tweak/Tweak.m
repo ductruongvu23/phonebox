@@ -50,14 +50,30 @@ static void PBOpenApp(void) {
     else NSLog(@"PhoneBoxSB: SBSLaunchApplicationWithIdentifier is missing");
 }
 
+/// Calls a selector if the object has it; returns whether it did. Every private call goes through here so a method that
+/// does not exist on this iOS is skipped (and logged) instead of crashing SpringBoard.
+static BOOL PBCall(id obj, const char *sel, int nargs, long long a, id b) {
+    SEL s = sel_registerName(sel);
+    if (!obj || ![obj respondsToSelector:s]) return NO;
+    if (nargs == 0) ((void (*)(id, SEL))objc_msgSend)(obj, s);
+    else if (nargs == 1) ((void (*)(id, SEL, long long))objc_msgSend)(obj, s, a);
+    else ((void (*)(id, SEL, long long, id))objc_msgSend)(obj, s, a, b);
+    return YES;
+}
+
 static void PBWake(void) {
     id bl = [objc_getClass("SBBacklightController") performSelector:NSSelectorFromString(@"sharedInstance")];
-    SEL on = NSSelectorFromString(@"turnOnScreenFullyWithBacklightSource:");
-    if ([bl respondsToSelector:on]) ((void (*)(id, SEL, long long))objc_msgSend)(bl, on, 1);
-    else NSLog(@"PhoneBoxSB: cannot turn the screen on (no SBBacklightController turnOnScreenFully...)");
-    id lm = [objc_getClass("SBLockScreenManager") performSelector:NSSelectorFromString(@"sharedInstance")];
-    SEL unlock = NSSelectorFromString(@"unlockUIFromSource:withOptions:");
-    if ([lm respondsToSelector:unlock]) ((void (*)(id, SEL, int, id))objc_msgSend)(lm, unlock, 0, nil); // no passcode: opens
+    BOOL on = PBCall(bl, "turnOnScreenFullyWithBacklightSource:", 1, 1, nil);
+    if (!on) NSLog(@"PhoneBoxSB: cannot turn the screen on (no SBBacklightController turnOnScreenFully...)");
+    // A phone without a passcode only needs the lock screen dismissed. Which call does it depends on the iOS build, so the
+    // ones that exist are tried in turn (a passcode phone stays locked: there is no secret to type here).
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        id lm = [objc_getClass("SBLockScreenManager") performSelector:NSSelectorFromString(@"sharedInstance")];
+        BOOL did = PBCall(lm, "unlockUIFromSource:withOptions:", 2, 8, nil);
+        if (!did) did = PBCall(lm, "attemptUnlockWithPasscode:", 2, 0, nil);
+        if (!did) did = PBCall(lm, "unlockWithRequest:completion:", 2, 0, nil);
+        if (!did) NSLog(@"PhoneBoxSB: no way to dismiss the lock screen on this iOS");
+    });
 }
 
 static void PBSleep(void) {
@@ -72,7 +88,7 @@ static void PBCommand(CFNotificationCenterRef c, void *o, CFStringRef name, cons
     dispatch_async(dispatch_get_main_queue(), ^{
         if ([n isEqualToString:kCmdWake]) PBWake();
         else if ([n isEqualToString:kCmdSleep]) PBSleep();
-        else if ([n isEqualToString:kCmdOpen]) PBOpenApp();
+        else if ([n isEqualToString:kCmdOpen]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ PBOpenApp(); }); // after the unlock animation
     });
 }
 

@@ -68,6 +68,9 @@ HTTP and SSE run through unchanged, so `PBAgentLink` needs no special case.
 the app in `/var/jb/Applications`, `phoneboxd` (LaunchDaemon), and `PhoneBoxSB.dylib` for SpringBoard.
 After installing, respring. Plugging the phone in wakes it and opens the panel; with "volume keys flip pages" on in the
 panel settings the volume buttons turn pages; kiosk mode makes Home return to the first page.
+`wake` turns the screen on and dismisses the lock screen only on a phone WITHOUT a passcode; with a passcode the phone
+stays on the lock screen until you unlock it (PhoneBox never handles the passcode). For a desk panel, turn the passcode
+off or keep the phone unlocked while it is plugged in.
 The tweak uses private SpringBoard methods and logs which hooks it found ("PhoneBoxSB:" in the device log); a hook that
 does not exist on your iOS is skipped and the rest keeps working.
 
