@@ -69,6 +69,15 @@
 
 - (void)didBecomeActive {
     _active = YES;
+#ifdef DEBUG
+    // Debug builds only (testing without a camera or Safari): a phonebox://pair link on the clipboard opens the pairing dialog.
+    NSString *clip = UIPasteboard.generalPasteboard.string;
+    if ([clip hasPrefix:@"phonebox://pair?"]) {
+        PBPairLink *link = [PBPairLink parse:[NSURL URLWithString:clip]];
+        UIPasteboard.generalPasteboard.string = @"";
+        if (link) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self handlePairLink:link]; });
+    }
+#endif
     UIApplication.sharedApplication.idleTimerDisabled = YES; // the panel stays on
     [_stream start];
     [_bridge appDidBecomeActive];

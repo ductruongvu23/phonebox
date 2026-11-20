@@ -12,6 +12,7 @@ DST="$ROOT/ios/app/Resources/www"
 mkdir -p "$DST"
 rsync -a --delete "$SRC/" "$DST/"
 cp "$ROOT/ios/app/bridge.js" "$DST/bridge.js"
+cp "$ROOT/ios/app/cq-polyfill.js" "$DST/cq-polyfill.js"
 
 python3 - "$DST/index.html" <<'PY'
 import re, sys
@@ -26,18 +27,15 @@ def sub(label, pattern, repl, flags=0):
 
 # 1. The native bridge shim must run before compat.js and main.js read window.Android.
 sub("bridge", r'<script src="compat\.js"></script>',
-    '<script src="bridge.js"></script>\n<script src="compat.js"></script>')
+    '<script src="bridge.js"></script>\n<script src="cq-polyfill.js"></script>\n<script src="compat.js"></script>')
 
 # 2. "Too old" message: no Android System WebView on iOS.
 sub("too-old", r"'This Android System WebView is too old.*?open PhoneBox again\.'",
     "'This iOS version is too old to run the panel. Update iOS to 14 or later, then open PhoneBox again.'", re.S)
 
-# 3. Container queries (cqw/cqh) need Safari 16: say so instead of naming Android System WebView.
+# 3. Container query units are polyfilled (cq-polyfill.js), so the "outdated WebView" notice about them is not shown on iOS.
 sub("cq-notice", r"    if \(window\.CSS && typeof CSS\.supports === 'function' && CSS\.supports\('font-size', '1cqw'\)\) return;",
-    "    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {\n"
-    "      var t = el.querySelector('span');\n"
-    "      if (t) { t.removeAttribute('data-i18n'); t.textContent = 'Widgets scale fully on iOS 16 or later.'; }\n"
-    "    }\n"
+    "    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return;\n"
     "    if (window.CSS && typeof CSS.supports === 'function' && CSS.supports('font-size', '1cqw')) return;")
 
 open(path, "w", encoding="utf-8").write(s)
@@ -57,5 +55,21 @@ if s.count(old_re) != 1 or s.count(old_loop) != 1:
     sys.exit("sync-www: the EMOJI_RE patch no longer matches upstream main.js")
 open(path, "w", encoding="utf-8").write(s.replace(old_re, new_re).replace(old_loop, new_loop))
 PYMAIN
+
+# The container query units themselves: 12cqw -> calc(12 * var(--cq-w, 1vw)) (the variables come from cq-polyfill.js).
+python3 - "$DST" <<'PYCSS'
+import glob, os, re, sys
+dst = sys.argv[1]
+unit = {"w": "1vw", "i": "1vw", "h": "1vh", "b": "1vh", "min": "1vmin", "max": "1vmax"}
+rx = re.compile(r"(?<![\w.-])(-?(?:\d+\.?\d*|\.\d+))cq(w|h|i|b|min|max)\b")
+total = 0
+for path in glob.glob(os.path.join(dst, "*.css")):
+    css = open(path, encoding="utf-8").read()
+    out, n = rx.subn(lambda m: "calc(%s * var(--cq-%s, %s))" % (m.group(1), m.group(2), unit[m.group(2)]), css)
+    total += n
+    open(path, "w", encoding="utf-8").write(out)
+if total < 50:
+    sys.exit("sync-www: only %d container query units found; the CSS changed upstream?" % total)
+PYCSS
 
 echo "sync-www: ok -> $DST ($(find "$DST" -type f | wc -l | tr -d ' ') files)"
