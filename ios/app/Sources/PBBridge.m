@@ -191,7 +191,11 @@ static void PBDarwinCallback(CFNotificationCenterRef c, void *observer, CFString
     else if ([name isEqualToString:PBKeyNextNotification]) [self.host bridgeEvaluate:@"window.onAndroidKey && window.onAndroidKey('next')"];
     else if ([name isEqualToString:PBBackNotification]) [self.host bridgeEvaluate:@"window.onAndroidBack && window.onAndroidBack()"];
     else if ([name isEqualToString:PBLuxNotification]) {
-        double lux = (PBNotifyState(PBLuxNotification) & PBLuxMask) / 100.0;
+        uint64_t raw = PBNotifyState(PBLuxNotification);
+        double lux = (raw & PBLuxMask) / 100.0;
+#ifdef DEBUG
+        [self.host bridgeEvaluate:[NSString stringWithFormat:@"fetch('/agent/api/selftest',{method:'POST',headers:{'X-PhoneBox-Panel':'1'},body:JSON.stringify({what:'lux-notification',raw:'%llu',lux:%g})})", raw, lux]];
+#endif
         [self.host bridgeEvaluate:[NSString stringWithFormat:@"window.__pbNative && window.__pbNative.sensors && (window.__pbNative.sensors.light = true); window.onAndroidSensor && window.onAndroidSensor('light', %g)", lux]];
     }
 }
