@@ -1,7 +1,8 @@
 name: iOS
 
 # Builds the iPhone app (.ipa for TrollStore) and the rootless jailbreak package (.deb) with plain clang on Linux.
-# Tag ios-v* to publish a GitHub Release and refresh the APT repo on the gh-pages branch.
+# Tag ios-v* to publish a GitHub Release with the .ipa, the .deb and their checksums.
+# (The Sileo/Zebra repo with the .deb lives in ductruongvu23/repo, not here.)
 on:
   push:
     branches: [ios]
@@ -57,11 +58,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --title "PhoneBox for iOS ${GITHUB_REF_NAME#ios-v}" --notes "iPhone app (.ipa, TrollStore) and rootless jailbreak package (.deb, Sileo/Zebra)." $(find dist -type f)
-      - name: APT repo
-        run: |
-          python3 ios/scripts/make-apt-repo.py dist /tmp/apt
-          git fetch origin gh-pages:gh-pages || git checkout --orphan gh-pages
-          git switch gh-pages 2>/dev/null || true
-          mkdir -p ios-apt && cp -R /tmp/apt/. ios-apt/
-          git config user.name github-actions && git config user.email github-actions@users.noreply.github.com
-          git add ios-apt && git commit -m "iOS APT repo ${GITHUB_REF_NAME}" && git push origin gh-pages
