@@ -50,3 +50,8 @@ tools/ui-tests/test-results/
 
 *.log
 *.txt
+# iOS
+ios/app/Resources/www/
+ios/build/
+.theos/
+ios/packages/

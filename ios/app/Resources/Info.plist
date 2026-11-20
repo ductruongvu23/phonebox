@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleExecutable</key><string>PhoneBox</string>
+  <key>CFBundleIdentifier</key><string>com.ductruongvu23.phonebox</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>PhoneBox</string>
+  <key>CFBundleDisplayName</key><string>PhoneBox</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <!-- Keep equal to the upstream release this build follows: the agent compares X-PhoneBox-App with it. -->
+  <key>CFBundleShortVersionString</key><string>0.9.22</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>MinimumOSVersion</key><string>15.0</string>
+  <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+  <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+  <key>UIRequiresFullScreen</key><true/>
+  <key>UIStatusBarHidden</key><true/>
+  <key>UIViewControllerBasedStatusBarAppearance</key><true/>
+  <key>UIUserInterfaceStyle</key><string>Dark</string>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.ductruongvu23.phonebox.pair</string>
+      <key>CFBundleURLSchemes</key><array><string>phonebox</string></array>
+    </dict>
+  </array>
+  <!-- The agent is reached by IP over HTTP (USB tunnel on loopback) or HTTPS with a self-signed, pinned certificate. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key><true/>
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
+  <key>NSLocalNetworkUsageDescription</key><string>PhoneBox connects to the PhoneBox agent on your PC over Wi-Fi.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Used by the Dictate widget to type on your PC by voice.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Used by the Dictate widget to turn your speech into text.</string>
+</dict>
+</plist>
