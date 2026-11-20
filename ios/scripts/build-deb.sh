@@ -11,7 +11,9 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/var/jb/Applications" "$STAGE/var/jb/usr/libexec" "$STAGE/var/jb/Library/LaunchDaemons" \
          "$STAGE/var/jb/Library/MobileSubstrate/DynamicLibraries" "$STAGE/DEBIAN"
 
-cp -R "$OUT/Payload/PhoneBox.app" "$STAGE/var/jb/Applications/PhoneBox.app"
+# The package is the jailbreak extras only (the app comes from the TrollStore .ipa; two copies of one bundle id clash).
+# WITH_APP=1 also packs the app, for a phone that has no TrollStore.
+if [ "${WITH_APP:-0}" = 1 ]; then cp -R "$OUT/Payload/PhoneBox.app" "$STAGE/var/jb/Applications/PhoneBox.app"; fi
 
 cc -framework Foundation -I"$APP/Sources" "$ROOT/ios/daemon/main.m" "$APP/Sources/PBUsbListener.m" "$APP/Sources/PBFlags.m" \
    -o "$STAGE/var/jb/usr/libexec/phoneboxd"

@@ -1,8 +1,8 @@
 Package: com.ductruongvu23.phonebox-jb
-Name: PhoneBox
+Name: PhoneBox Extras
 Version: 0.9.22
 Architecture: iphoneos-arm64
-Description: PhoneBox panel for iPhone: USB tunnel, wake and open on plug-in, volume keys, kiosk
+Description: PhoneBox extras: USB tunnel, wake and open on plug-in, volume keys, kiosk (needs the PhoneBox app)
 Maintainer: ductruongvu23
 Author: ductruongvu23
 Section: Utilities
