@@ -133,6 +133,9 @@ public sealed class UsbMuxTests : IDisposable
                     case "Connect":
                         RequestedPort = m["PortNumber"] as long?;
                         if (m["DeviceID"] as long? != 9) { await Reply(s, 2); return; }
+                        // only the pool port gets tunnels; anything else (the jailbreak control port that IosUsb greets a new phone
+                        // on, off macOS) is refused like a phone with nothing listening there
+                        if (m["PortNumber"] as long? != UsbMux.HtonsPort(IosUsb.DevicePort)) { await Reply(s, 3); return; }
                         await Reply(s, 0);
                         Tunnels.Writer.TryWrite(s); // from here the stream is the phone's TCP connection
                         await Task.Delay(Timeout.Infinite);
@@ -210,6 +213,8 @@ public sealed class UsbMuxTests : IDisposable
         using var mux = new FakeMux();
         UsbMux.AddressOverride = $"127.0.0.1:{mux.Port}";
         var cfgPath = Path.Combine(_dir, "config.json");
+        // the same on every OS: macOS would otherwise follow the computer's lock instead of greeting the phone on its control port
+        File.WriteAllText(cfgPath, """{"display":{"followComputerLock":false}}""");
         using var ios = new IosUsb(new ConfigStore(cfgPath), NullLogger<IosUsb>.Instance, new AgentEndpoint(agentPort));
         await ios.StartAsync(CancellationToken.None);
         try

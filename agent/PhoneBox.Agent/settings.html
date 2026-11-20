@@ -1973,7 +1973,7 @@ async function pairOverWifi() {
         h('img', { src: svg(r.appQr), alt: 'QR code of the app download' }),
         h('small', { class: 'hint' }, t('s.wifi.step1Hint'))),
       pairBox),
-    r.iosApp ? h('p', { class: 'hint', style: 'margin:0' }, 'iPhone / iPad (jailbreak or TrollStore): ', h('a', { href: r.iosApp, target: '_blank', rel: 'noopener' }, r.iosApp.replace('https://', ''))) : null,
+    r.iosApp ? h('p', { class: 'hint', style: 'margin:0' }, '📱 ', h('a', { href: r.iosApp, target: '_blank', rel: 'noopener' }, r.iosApp.replace('https://', ''))) : null,
     h('p', { class: 'hint', style: 'margin:0' }, r.hosts.length
       ? `The phone will connect to ${r.hosts.join(', ')} on port ${r.port}. The code works once, for 5 minutes; the key itself is not in the QR code.`
       : 'No LAN or Tailscale address was found on this computer, so the phone has nothing to connect to.'),
