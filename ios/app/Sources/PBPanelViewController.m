@@ -99,6 +99,17 @@
     if (_brightnessOverridden) UIScreen.mainScreen.brightness = _savedBrightness;
 }
 
+#ifdef DEBUG
+// Debug builds only: what the native side actually did, sent to the agent so a test can read it.
+- (void)debugReport:(NSString *)what {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIInterfaceOrientation o = self.view.window.windowScene.interfaceOrientation;
+        NSString *js = [NSString stringWithFormat:@"fetch('/agent/api/selftest',{method:'POST',headers:{'X-PhoneBox-Panel':'1'},body:JSON.stringify({what:'%@',brightness:%.3f,overridden:%d,orientation:%ld,bounds:'%@'})})", what, UIScreen.mainScreen.brightness, self->_brightnessOverridden, (long)o, NSStringFromCGRect(self.view.bounds)];
+        [self->_web evaluateJavaScript:js completionHandler:nil];
+    });
+}
+#endif
+
 #pragma mark PBBridgeHost
 
 - (void)bridgeEvaluate:(NSString *)script {
@@ -119,12 +130,18 @@
         if (value < 0) {
             if (self->_brightnessOverridden) UIScreen.mainScreen.brightness = self->_savedBrightness;
             self->_brightnessOverridden = NO;
+#ifdef DEBUG
+            [self debugReport:@"setBrightness(-1)"];
+#endif
             return;
         }
         if (!self->_brightnessOverridden) self->_savedBrightness = UIScreen.mainScreen.brightness;
         self->_brightnessOverridden = YES;
         self->_wantedBrightness = MIN(1.0, MAX(0.01, value));
         UIScreen.mainScreen.brightness = self->_wantedBrightness;
+#ifdef DEBUG
+        [self debugReport:[NSString stringWithFormat:@"setBrightness(%.2f)", value]];
+#endif
     });
 }
 
@@ -134,6 +151,9 @@
         if ([m isEqualToString:self->_orientation]) return;
         self->_orientation = m;
         [self applyOrientation];
+#ifdef DEBUG
+        [self debugReport:[NSString stringWithFormat:@"setOrientation(%@)", m]];
+#endif
     });
 }
 
